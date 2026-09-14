@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+:root {
+  --bg: #1f3c88;
+  --card: #ffffff;
+  --text: #222;
+  --accent: #1f3c88;
+}
+
+body.dark {
+  --bg: #0f1f44;
+  --card: #1e1e1e;
+  --text: #f4f4f4;
+  --accent: #4c8bf5;
+}
+
+body {
+  margin:0;
+  font-family:Segoe UI, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  transition:0.3s;
+}
+
+/* ===== HEADER ===== */
+.header { text-align:center; padding:30px 20px 10px 20px; }
+.logo { max-width:220px; height:auto; }
+
+/* ===== CARD ===== */
+.container {
+  max-width:1000px;
+  margin:20px auto 40px auto;
+  background:var(--card);
+  padding:30px;
+  border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.25);
+}
+
+h1 { margin-top:0; }
+
+/* ===== CONTROLS ===== */
+.controls { display:flex; gap:10px; flex-wrap:wrap; }
+input { padding:10px; border-radius:6px; border:1px solid #ccc; flex:1; font-size:14px; }
+button { padding:10px 18px; border-radius:6px; border:none; cursor:pointer; background:var(--accent); color:white; font-weight:500; }
+button.secondary { background:#888; }
+
+/* ===== BARRE DE PROGRESSION FINE (2px) ===== */
+progress {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 2px; /* Fine */
+  border: none;
+  background: rgba(0,0,0,0.05);
+  margin: 15px 0;
+  transition: opacity 0.3s;
+}
+
+body.dark progress { background: rgba(255,255,255,0.05); }
+
+progress::-webkit-progress-bar { background: transparent; }
+progress::-webkit-progress-value { background-color: var(--accent); transition: width 0.4s ease; }
+progress::-moz-progress-bar { background-color: var(--accent); }
+
+/* ===== TABLE ===== */
+table { width:100%; border-collapse:collapse; margin-top:20px; font-size:14px; }
+th, td { padding:10px; border-bottom:1px solid #ddd; text-align:left; }
+th { cursor:pointer; background:var(--accent); color:white; }
+tr:hover { background:rgba(0,0,0,0.05); }
+
+.loader { margin-top:15px; font-weight:500; }
+.footer { margin-top:20px; font-size:12px; color:#888; text-align:center; }
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <img class="logo" src="https://www.marseille-echecs.com/wp-content/uploads/2023/04/logo-blanc.png" alt="Marseille Échecs">
+</div>
+
+<div class="container">
+  <h1>Recherche Joueurs FFE</h1>
+
+  <div class="controls">
+    <input id="nom" placeholder="Nom*">
+    <input id="prenom" placeholder="Prénom (optionnel)">
+    <input id="club" placeholder="Club (*|optionnel)">
+    <button id="btnSearch" onclick="recherche()">Rechercher</button>
+    <button id="themeBtn" class="secondary" onclick="toggleTheme()">🌙</button>
+  </div>
+
+  <progress id="progressBar" value="0" max="100"></progress>
+
+  <div class="loader" id="loader"></div>
+  <div id="result"></div>
+
+  <div class="footer">
+    powered by grego.chiron ©<span id="year"></span>
+  </div>
+</div>
+
+<script>
+document.getElementById("year").innerText = new Date().getFullYear();
+let joueursData = [];
+let sortDirection = 1;
+let progressInterval = null;
+let taskId = null; // Variable globale
+
+function recherche() {
+  const nom = document.getElementById("nom").value.trim();
+  const prenom = document.getElementById("prenom").value.trim();
+  const club = document.getElementById("club").value.trim();
+
+  const loader = document.getElementById("loader");
+  const result = document.getElementById("result");
+  const button = document.getElementById("btnSearch");
+  const progressBar = document.getElementById("progressBar");
+
+  result.innerHTML = "";
+  loader.innerText = "Recherche en cours...";
+  button.disabled = true;
+  
+  // FIX: On n'utilise PAS 'const' ici pour ne pas masquer la globale
+  taskId = "task_" + new Date().getTime();
+
+  // Reset visuel de la barre
+  progressBar.value = 0;
+  progressBar.max = 1;
+  progressBar.style.opacity = "1";
+
+  if (club && !nom) { 
+    if (progressInterval) clearInterval(progressInterval);
+    
+    progressInterval = setInterval(() => {
+
+      if (!taskId) return;
+
+      google.script.run
+        .withSuccessHandler(data => {
+
+          if (!data) return;
+          const progressBar = document.getElementById("progressBar");
+          if (data.total) progressBar.max = data.total;
+          if (data.current !== undefined) {
+            progressBar.value = Math.min(data.current, progressBar.max);
+          }
+        })
+        .getSearchProgress(taskId);
+
+    }, 700);
+  }
+
+  const cleanUp = () => {
+    button.disabled = false;
+    if (progressInterval) {
+      clearInterval(progressInterval);
+      progressInterval = null;
+    }
+    progressBar.value = progressBar.max;
+    setTimeout(() => { progressBar.style.opacity = "0.3"; }, 2000);
+  }
+
+  const runner = google.script.run
+    .withSuccessHandler(data => {
+      cleanUp();
+      renderResult(data);
+    })
+    .withFailureHandler(e => {
+      cleanUp();
+      loader.innerText = "Erreur : " + e.message;
+    });
+
+  if (nom && club) {
+    runner.RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club);
+  } else if (nom) {
+    runner.RECHERCHE_FFE_NOMINAL_JSON(nom, prenom);
+  } else if (club) {
+    // On passe l'ID global au backend
+    runner.RECHERCHE_FFE_CLUB_JOUEURS_JSON(club, taskId);
+  } else {
+    cleanUp();
+    loader.innerText = "";
+    result.innerHTML = "<p>Veuillez renseigner au moins un Nom ou un Club.</p>";
+  }
+}
+
+function renderResult(data) {
+  const loader = document.getElementById("loader");
+  loader.innerText = "";
+  if (!data || data.error) {
+    document.getElementById("result").innerHTML = "<p>" + (data?.error || "Aucun résultat") + "</p>";
+    return;
+  }
+  joueursData = data.joueurs;
+  let html = `<p><strong>${data.count}</strong> résultat(s)</p><table><thead><tr>
+    <th onclick="sortTable('nrFFE')">NrFFE</th>
+    <th onclick="sortTable('np')">NOM Prénom</th>
+    <th onclick="sortTable('af')">Af.</th>
+    <th onclick="sortTable('elo')">Elo</th>
+    <th onclick="sortTable('rapide')">Rapide</th>
+    <th onclick="sortTable('blitz')">Blitz</th>
+    <th onclick="sortTable('cat')">Cat</th>
+    <th onclick="sortTable('club')">Club</th>
+    <th>Lien</th>
+    </tr></thead><tbody>`;
+  joueursData.forEach(j => {
+    html += `<tr><td>${j.nrFFE}</td><td>${j.np}</td><td>${j.af}</td><td>${j.elo}</td><td>${j.rapide}</td><td>${j.blitz}</td><td>${j.cat}</td><td>${j.club}</td>
+      <td>${j.lienFFE ? `<a href="${j.lienFFE}" target="_blank">FFE</a>` : ""}${j.lienFIDE ? ` | <a href="${j.lienFIDE}" target="_blank">FIDE</a>` : ""}</td></tr>`;
+  });
+  html += "</tbody></table>";
+  document.getElementById("result").innerHTML = html;
+}
+
+function sortTable(key) {
+  sortDirection *= -1;
+  joueursData.sort((a, b) => {
+    let valA = a[key] || "";
+    let valB = b[key] || "";
+
+    // Extraction des chiffres si c'est une valeur Elo / Rapide / Blitz
+    if (['elo', 'rapide', 'blitz', 'nrFFE'].includes(key)) {
+      const numA = parseInt(valA, 10) || 0;
+      const numB = parseInt(valB, 10) || 0;
+      if (numA !== numB) return (numA - numB) * sortDirection;
+    }
+
+    return valA.localeCompare(valB) * sortDirection;
+  });
+
+  renderResult({ count: joueursData.length, joueurs: joueursData });
+}
+
+function toggleTheme() {
+  const isDark = document.body.classList.toggle("dark");
+  document.getElementById("themeBtn").innerText = isDark ? "☀️" : "🌙";
+}
+document.addEventListener("keydown", e => { if (e.key === "Enter") recherche(); });
+</script>
+
+</body>
+</html>

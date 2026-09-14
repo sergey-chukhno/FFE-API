@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+<style>
+:root {
+  --bg: #1f3c88;
+  --card: #ffffff;
+  --text: #222;
+  --accent: #1f3c88;
+  --border: #ccc;
+  --badge-bg: #e2e8f0;
+  --badge-text: #1e293b;
+}
+
+body.dark {
+  --bg: #0f1f44;
+  --card: #1e1e1e;
+  --text: #f4f4f4;
+  --accent: #4c8bf5;
+  --border: #444;
+  --badge-bg: #334155;
+  --badge-text: #f8fafc;
+}
+
+body {
+  margin:0;
+  font-family:Segoe UI, sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  transition:0.3s;
+}
+
+/* ===== HEADER ===== */
+.header { text-align:center; padding:30px 20px 10px 20px; }
+.logo { max-width:220px; height:auto; }
+
+/* ===== CARD ===== */
+.container {
+  max-width:1100px;
+  margin:20px auto 40px auto;
+  background:var(--card);
+  padding:30px;
+  border-radius:12px;
+  box-shadow:0 10px 30px rgba(0,0,0,0.25);
+}
+
+h1 { margin-top:0; }
+
+/* ===== CONTROLS ===== */
+.controls { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+input[type="text"] { 
+  padding:10px; 
+  border-radius:6px; 
+  border:1px solid var(--border); 
+  flex:1; 
+  min-width:200px;
+  font-size:14px; 
+  background:var(--card);
+  color:var(--text);
+}
+button { 
+  padding:10px 18px; 
+  border-radius:6px; 
+  border:none; 
+  cursor:pointer; 
+  background:var(--accent); 
+  color:white; 
+  font-weight:500; 
+  transition: opacity 0.2s;
+}
+button:disabled { 
+  opacity:0.5; 
+  cursor:not-allowed; 
+}
+button.secondary { background:#888; }
+
+/* ===== DROP ZONE ===== */
+.drop-zone {
+  border:2px dashed var(--border);
+  border-radius:8px;
+  padding:25px 20px;
+  text-align:center;
+  margin-top:15px;
+  transition:0.2s;
+}
+
+.drop-zone.dragover {
+  border-color:var(--accent);
+  background:rgba(31, 60, 136, 0.08);
+}
+
+.drop-zone p {
+  margin-top:0;
+  margin-bottom:15px;
+  font-size:14px;
+}
+
+#fileInput { display:none; }
+
+/* ===== PROGRESS & TABLE ===== */
+.loader { margin-top:20px; font-weight:500; font-size:14px; }
+progress {
+  display: block;
+  width: 100%;
+  height: 4px;
+  border: none;
+  background: rgba(0,0,0,0.05);
+  margin: 15px 0;
+}
+
+table { width:100%; border-collapse:collapse; margin-top:20px; font-size:14px; }
+th, td { padding:10px; border-bottom:1px solid var(--border); text-align:left; }
+th { background:var(--accent); color:white; }
+tr:hover { background:rgba(0,0,0,0.05); }
+
+.badge-af {
+  display: inline-block;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: bold;
+  background-color: var(--badge-bg);
+  color: var(--badge-text);
+  text-align: center;
+}
+
+.status-ok { color: #10b981; font-weight: 600; }
+.status-missing { color: #ef4444; font-weight: 600; }
+
+.footer { margin-top:30px; font-size:12px; color:#888; text-align:center; }
+</style>
+</head>
+
+<body>
+
+<div class="header">
+  <img class="logo" src="https://www.marseille-echecs.com/wp-content/uploads/2023/04/logo-blanc.png" alt="Marseille Échecs">
+</div>
+
+<div class="container">
+  <h1>Vérification des Licences FFE</h1>
+
+  <div class="drop-zone" id="dropZone">
+    <p>Glisse un fichier <strong>.xlsx</strong> ici ou clique sur le bouton ci-dessous :</p>
+    
+    <div class="controls">
+      <button id="btnUpload" onclick="document.getElementById('fileInput').click()">charger fichier d'export</button>
+      <input id="fileNameDisplay" type="text" placeholder="Aucun fichier sélectionné" readonly>
+      <button id="btnVerify" disabled onclick="verifierLicences()">vérifier licences</button>
+      <button id="themeBtn" class="secondary" onclick="toggleTheme()">🌙</button>
+    </div>
+
+    <input type="file" id="fileInput" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+  </div>
+
+  <progress id="progressBar" value="0" max="100" style="display:none;"></progress>
+  <div class="loader" id="loader"></div>
+  <div id="result"></div>
+
+  <div class="footer">
+    powered by grego.chiron ©<span id="year"></span>
+  </div>
+</div>
+
+<script>
+document.getElementById("year").innerText = new Date().getFullYear();
+let fileData = null;
+
+function toggleTheme() { 
+  document.body.classList.toggle("dark"); 
+}
+
+const fileInput = document.getElementById("fileInput");
+const fileNameDisplay = document.getElementById("fileNameDisplay");
+const btnVerify = document.getElementById("btnVerify");
+const dropZone = document.getElementById("dropZone");
+
+function formatFileSize(bytes) {
+  if (bytes === 0) return '0 Octets';
+  const k = 1024;
+  const sizes = ['Octets', 'Ko', 'Mo', 'Go'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+function processFile(file) {
+  if (!file) return;
+  if (!file.name.endsWith(".xlsx")) {
+    alert("Veuillez sélectionner un fichier au format .xlsx");
+    return;
+  }
+  fileData = file;
+  fileNameDisplay.value = `${file.name} (${formatFileSize(file.size)})`;
+  btnVerify.disabled = false;
+}
+
+fileInput.addEventListener("change", (e) => processFile(e.target.files[0]));
+
+["dragenter", "dragover"].forEach(eventName => {
+  dropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.add("dragover");
+  }, false);
+});
+
+["dragleave", "drop"].forEach(eventName => {
+  dropZone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dropZone.classList.remove("dragover");
+  }, false);
+});
+
+dropZone.addEventListener("drop", (e) => {
+  const dt = e.dataTransfer;
+  processFile(dt.files[0]);
+});
+
+function recalculateSheetRange(worksheet) {
+  let minRow = Infinity, maxRow = -Infinity;
+  let minCol = Infinity, maxCol = -Infinity;
+
+  for (let key in worksheet) {
+    if (key.startsWith('!')) continue;
+    try {
+      const cell = XLSX.utils.decode_cell(key);
+      if (cell.r < minRow) minRow = cell.r;
+      if (cell.r > maxRow) maxRow = cell.r;
+      if (cell.c < minCol) minCol = cell.c;
+      if (cell.c > maxCol) maxCol = cell.c;
+    } catch (e) {}
+  }
+
+  if (minRow !== Infinity && maxRow >= minRow) {
+    worksheet['!ref'] = XLSX.utils.encode_range({
+      s: { r: minRow, c: minCol },
+      e: { r: maxRow, c: maxCol }
+    });
+  }
+}
+
+function searchPlayerFFE(nom, prenom, club) {
+  return new Promise((resolve) => {
+    if (typeof google === "undefined" || !google.script || !google.script.run) {
+      resolve({ count: 0, joueurs: [] });
+      return;
+    }
+    google.script.run
+      .withSuccessHandler(data => resolve(data))
+      .withFailureHandler(err => resolve({ error: err.message, joueurs: [] }))
+      .RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club);
+  });
+}
+
+async function verifierLicences() {
+  if (!fileData) return;
+
+  const loader = document.getElementById("loader");
+  const resultDiv = document.getElementById("result");
+  const progressBar = document.getElementById("progressBar");
+
+  resultDiv.innerHTML = "";
+  btnVerify.disabled = true;
+  progressBar.style.display = "block";
+  progressBar.value = 0;
+
+  try {
+    const dataBuffer = await fileData.arrayBuffer();
+    const workbook = XLSX.read(dataBuffer, { type: 'array' });
+    const firstSheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    recalculateSheetRange(worksheet);
+
+    const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
+
+    if (rows.length === 0) {
+      loader.innerText = "Le fichier est vide.";
+      btnVerify.disabled = false;
+      return;
+    }
+
+    const clubCible = "Marseille-Echecs";
+    const total = rows.length;
+    progressBar.max = total;
+
+    const resultats = [];
+
+    for (let i = 0; i < total; i++) {
+      const row = rows[i];
+      const prenom = (row["Prénom participant"] || "").toString().trim();
+      const nom = (row["Nom participant"] || "").toString().trim();
+      const paiement = (row["Paiement"] || "").toString().trim();
+
+      loader.innerText = `Vérification en cours (${i + 1}/${total}) : ${prenom} ${nom}...`;
+      progressBar.value = i + 1;
+
+      let ffeData = null;
+      if (nom || prenom) {
+        ffeData = await searchPlayerFFE(nom, prenom, clubCible);
+      }
+
+      const joueurTrouve = (ffeData && ffeData.joueurs && ffeData.joueurs.length > 0) ? ffeData.joueurs[0] : null;
+
+      resultats.push({
+        nomExport: nom,
+        prenomExport: prenom,
+        paiement: paiement,
+        nrFFE: joueurTrouve ? joueurTrouve.nrFFE : "-",
+        npFFE: joueurTrouve ? joueurTrouve.np : "-",
+        af: joueurTrouve ? joueurTrouve.af : "-",
+        trouve: !!joueurTrouve
+      });
+    }
+
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s).`;
+    renderTable(resultats);
+
+  } catch (err) {
+    loader.innerText = "Erreur lors de la lecture du fichier : " + err.message;
+  } finally {
+    btnVerify.disabled = false;
+  }
+}
+
+function renderTable(data) {
+  let html = `<table><thead><tr>
+    <th>Participant (Export)</th>
+    <th>NrFFE</th>
+    <th>Nom Prénom (FFE)</th>
+    <th>Af.</th>
+    <th>Paiement</th>
+    <th>Statut</th>
+  </tr></thead><tbody>`;
+
+  data.forEach(item => {
+    const statusClass = item.trouve ? "status-ok" : "status-missing";
+    const statusText = item.trouve ? "Trouvé" : "Non trouvé";
+
+    html += `<tr>
+      <td><strong>${item.nomExport}</strong> ${item.prenomExport}</td>
+      <td>${item.nrFFE}</td>
+      <td>${item.npFFE}</td>
+      <td><span class="badge-af">${item.af}</span></td>
+      <td>${item.paiement}</td>
+      <td class="${statusClass}">${statusText}</td>
+    </tr>`;
+  });
+
+  html += "</tbody></table>";
+  document.getElementById("result").innerHTML = html;
+}
+</script>
+
+</body>
+</html>
