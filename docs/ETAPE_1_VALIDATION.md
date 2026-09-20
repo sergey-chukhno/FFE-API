@@ -3,7 +3,7 @@
 Date : 20 Septembre 2026  
 Branche Git : `feat/chessxp-client-config`  
 Statut : **100% Validé (Succès)**  
-Auteur : Senior Software Engineer  
+Auteur : Sergey CHUKHNO
 
 ---
 
