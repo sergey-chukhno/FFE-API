@@ -159,15 +159,30 @@ function chessXpSearchPlayersByName(nom, prenom, options = {}) {
     return [];
   }
 
+  const cleanNom = nom.trim();
+  const cleanPrenom = prenom ? prenom.trim() : undefined;
+
   const params = {
-    last_name: nom.trim(),
-    first_name: prenom ? prenom.trim() : undefined,
+    last_name: cleanNom,
+    first_name: cleanPrenom,
     limit: options.limit || CHESSXP_CONFIG.DEFAULT_SEARCH_LIMIT,
     include_inactive: options.include_inactive !== undefined ? options.include_inactive : true,
     include: options.include !== undefined ? options.include : (CHESSXP_CONFIG.INCLUDE_FIDE_DEFAULT ? "fide" : undefined)
   };
 
-  const rawList = chessXpFetch("/api/player/search-by-name", params);
+  let rawList = chessXpFetch("/api/player/search-by-name", params);
+
+  // Si aucun résultat et nom composé (espace ou tiret), tenter la variante inverse
+  if (!rawList || rawList.length === 0) {
+    if (cleanNom.includes(" ")) {
+      params.last_name = cleanNom.replace(/\s+/g, "-");
+      rawList = chessXpFetch("/api/player/search-by-name", params);
+    } else if (cleanNom.includes("-")) {
+      params.last_name = cleanNom.replace(/-/g, " ");
+      rawList = chessXpFetch("/api/player/search-by-name", params);
+    }
+  }
+
   if (!Array.isArray(rawList)) return [];
 
   return rawList.map(mapChessXpToJoueur).filter(Boolean);
