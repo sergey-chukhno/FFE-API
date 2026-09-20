@@ -5,8 +5,16 @@ const DEBUG = true;
 const OPTIMIZED = false;
 const WITH_FIDE = false;
 
-
-
+/*************************************************************
+ * CONFIGURATION CHESSXP API
+ *************************************************************/
+const CHESSXP_CONFIG = {
+  BASE_URL: "https://ffe.chessxp.com",
+  API_KEY: "cxp_live_nRngSzJKufKfxVjLGRRDPRBNQ5YvwAGmi_1Jylboivg",
+  TIMEOUT_MS: 10000,
+  DEFAULT_SEARCH_LIMIT: 50,
+  INCLUDE_FIDE_DEFAULT: true
+};
 
 /**
  * STRING_STRICT_COMPARE
