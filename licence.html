@@ -131,6 +131,39 @@ tr:hover { background:rgba(0,0,0,0.05); }
 .status-other-club { color: #f59e0b; font-weight: 600; }
 .status-missing { color: #ef4444; font-weight: 600; }
 
+/* ===== PAGINATION ===== */
+.pagination {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 15px;
+  padding: 12px 5px;
+  flex-wrap: wrap;
+  gap: 12px;
+  border-top: 1px solid var(--border);
+}
+.pagination-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.pagination-buttons button {
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.pagination-info {
+  font-size: 13px;
+  color: #666;
+}
+body.dark .pagination-info {
+  color: #aaa;
+}
+.pagination-page-indicator {
+  font-size: 13px;
+  padding: 0 4px;
+}
+
 /* ===== BADGES SOURCE ===== */
 .source-badge {
   display: inline-flex;
@@ -436,41 +469,62 @@ async function verifierLicences() {
       licence: (row["Licence"] || row["N° FFE"] || row["NrFFE"] || row["Code FFE"] || "").toString().trim()
     }));
 
-    const BATCH_SIZE = 25;
-    const resultats = [];
-    const totalBatches = Math.ceil(total / BATCH_SIZE);
-
-    for (let b = 0; b < totalBatches; b++) {
-      const chunk = participants.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
-      const currentCount = Math.min(total, (b + 1) * BATCH_SIZE);
-
-      loader.innerText = `Vérification par lot en cours (${currentCount}/${total}) [Club : ${clubCible}]...`;
-
-      const resp = await verifyLicencesBatch(chunk, clubCible);
-      if (resp && resp.resultats && resp.resultats.length > 0) {
-        resp.resultats.forEach(r => resultats.push(r));
-      } else {
-        // Fallback si échec batch
-        chunk.forEach(p => {
-          resultats.push({
-            nomExport: p.nom,
-            prenomExport: p.prenom,
-            paiement: p.paiement,
-            nrFFE: p.licence || "-",
-            npFFE: "-",
-            af: "-",
-            elo: "-",
-            club: "-",
-            trouve: false,
-            source: null
-          });
-        });
-      }
-
-      progressBar.value = currentCount;
+    const BATCH_SIZE = 200;
+    const CONCURRENCY = 2;
+    const chunks = [];
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      chunks.push({
+        index: Math.floor(i / BATCH_SIZE),
+        data: participants.slice(i, i + BATCH_SIZE)
+      });
     }
 
-    renderTable(resultats);
+    let processedCount = 0;
+    const resultsByChunk = new Array(chunks.length);
+
+    loader.innerText = `Vérification par lot en cours (0/${total}) [Club : ${clubCible}]...`;
+
+    async function processChunk(chunkObj) {
+      const resp = await verifyLicencesBatch(chunkObj.data, clubCible);
+      if (resp && resp.resultats && resp.resultats.length > 0) {
+        resultsByChunk[chunkObj.index] = resp.resultats;
+      } else {
+        resultsByChunk[chunkObj.index] = chunkObj.data.map(p => ({
+          nomExport: p.nom,
+          prenomExport: p.prenom,
+          paiement: p.paiement,
+          nrFFE: p.licence || "-",
+          npFFE: "-",
+          af: "-",
+          elo: "-",
+          club: "-",
+          trouve: false,
+          source: null
+        }));
+      }
+      processedCount += chunkObj.data.length;
+      progressBar.value = Math.min(processedCount, total);
+      loader.innerText = `Vérification par lot en cours (${Math.min(processedCount, total)}/${total}) [Club : ${clubCible}]...`;
+    }
+
+    let queueIndex = 0;
+    async function worker() {
+      while (queueIndex < chunks.length) {
+        const chunkObj = chunks[queueIndex++];
+        await processChunk(chunkObj);
+      }
+    }
+
+    const workers = [];
+    const activeWorkers = Math.min(CONCURRENCY, chunks.length);
+    for (let w = 0; w < activeWorkers; w++) {
+      workers.push(worker());
+    }
+    await Promise.all(workers);
+
+    const resultats = resultsByChunk.flat();
+
+    renderTable(resultats, 1);
     updateSummaryStats();
 
   } catch (err) {
@@ -590,8 +644,26 @@ function renderLicenceRowHtml(item, idx) {
   </tr>`;
 }
 
-function renderTable(data) {
+let currentPage = 1;
+const PAGE_SIZE = 200;
+
+function changePage(newPage) {
+  renderTable(dernierResultats, newPage);
+  const resultDiv = document.getElementById("result");
+  if (resultDiv) {
+    resultDiv.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+}
+
+function renderTable(data, page = 1) {
   dernierResultats = data || [];
+  const total = dernierResultats.length;
+  const totalPages = Math.ceil(total / PAGE_SIZE) || 1;
+  currentPage = Math.max(1, Math.min(page, totalPages));
+
+  const startIdx = (currentPage - 1) * PAGE_SIZE;
+  const endIdx = Math.min(startIdx + PAGE_SIZE, total);
+  const pageItems = dernierResultats.slice(startIdx, endIdx);
 
   let html = `<table><thead><tr>
     <th>Participant (Export)</th>
@@ -606,11 +678,27 @@ function renderTable(data) {
     <th>Action</th>
   </tr></thead><tbody>`;
 
-  dernierResultats.forEach((item, idx) => {
-    html += renderLicenceRowHtml(item, idx);
+  pageItems.forEach((item, localIdx) => {
+    const globalIdx = startIdx + localIdx;
+    html += renderLicenceRowHtml(item, globalIdx);
   });
 
   html += "</tbody></table>";
+
+  // Contrôles de pagination si des participants sont présents
+  if (total > 0) {
+    html += `<div class="pagination">
+      <div class="pagination-info">
+        Affichage des participants <strong>${total === 0 ? 0 : startIdx + 1}</strong> à <strong>${endIdx}</strong> sur <strong>${total}</strong>
+      </div>
+      <div class="pagination-buttons">
+        <button onclick="changePage(${currentPage - 1})" ${currentPage <= 1 ? "disabled" : ""}>◀ Précédent</button>
+        <span class="pagination-page-indicator">Page <strong>${currentPage}</strong> / ${totalPages}</span>
+        <button onclick="changePage(${currentPage + 1})" ${currentPage >= totalPages ? "disabled" : ""}>Suivant ▶</button>
+      </div>
+    </div>`;
+  }
+
   document.getElementById("result").innerHTML = html;
 }
 
@@ -619,7 +707,7 @@ const clubCibleInputEl = document.getElementById("clubCible");
 if (clubCibleInputEl) {
   clubCibleInputEl.addEventListener("input", () => {
     if (dernierResultats && dernierResultats.length > 0) {
-      renderTable(dernierResultats);
+      renderTable(dernierResultats, currentPage);
       updateSummaryStats();
     }
   });
