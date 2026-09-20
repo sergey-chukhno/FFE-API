@@ -548,7 +548,10 @@ function recheckParticipantFFE(idx) {
   }
 
   const clubCibleInput = document.getElementById("clubCible");
-  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim() || "Marseille-Echecs";
+  let clubParam = (clubCibleInput ? clubCibleInput.value : "").trim();
+  if (item.club && item.club !== "-" && item.club !== "Sans club") {
+    clubParam = item.club;
+  }
 
   const handleSuccess = (resp) => {
     if (resp && resp.joueurs && resp.joueurs.length > 0) {
@@ -578,7 +581,7 @@ function recheckParticipantFFE(idx) {
       }
     } else {
       if (btn) {
-        btn.innerText = "⚠️ Non trouvé FFE";
+        btn.innerText = "⚠️ Non trouvé";
         btn.disabled = false;
         setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
       }
@@ -587,7 +590,7 @@ function recheckParticipantFFE(idx) {
 
   const handleFailure = (err) => {
     if (btn) {
-      btn.innerText = "Erreur FFE";
+      btn.innerText = "⚠️ Non trouvé";
       btn.disabled = false;
       setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
     }

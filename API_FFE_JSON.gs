@@ -86,10 +86,15 @@ function REVERIFIER_JOUEUR_DIRECT_FFE_JSON(nom, prenom, club, licence) {
     Logger.log(`[RE-VERIF DIRECT FFE] Demandé pour ${nom} ${prenom} (club: ${club || '-'}, lic: ${licence || '-'})`);
   }
 
+  // 1. Si un club est spécifié, tenter d'abord dans ce club
   if (club && club.trim()) {
-    return RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club, true);
+    const resClub = RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club, true);
+    if (!resClub.error && resClub.joueurs && resClub.joueurs.length > 0) {
+      return resClub;
+    }
   }
 
+  // 2. Si non trouvé dans le club ou sans club spécifié, recherche nominale ouverte en direct FFE
   return RECHERCHE_FFE_NOMINAL_JSON(nom, prenom, true);
 }
 
