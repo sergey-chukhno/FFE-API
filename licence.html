@@ -147,6 +147,7 @@ tr:hover { background:rgba(0,0,0,0.05); }
     <p>Glisse un fichier <strong>.xlsx</strong> ici ou clique sur le bouton ci-dessous :</p>
     
     <div class="controls">
+      <input id="clubCible" type="text" value="Marseille-Echecs" placeholder="Club cible (ex: Marseille-Echecs)" style="max-width:220px;">
       <button id="btnUpload" onclick="document.getElementById('fileInput').click()">charger fichier d'export</button>
       <input id="fileNameDisplay" type="text" placeholder="Aucun fichier sélectionné" readonly>
       <button id="btnVerify" disabled onclick="verifierLicences()">vérifier licences</button>
@@ -243,16 +244,27 @@ function recalculateSheetRange(worksheet) {
   }
 }
 
-function searchPlayerFFE(nom, prenom, club) {
+// Helper sécurisé d'échappement anti-XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function verifyLicencesBatch(participants, club, forceScraping = false) {
   return new Promise((resolve) => {
     if (typeof google === "undefined" || !google.script || !google.script.run) {
-      resolve({ count: 0, joueurs: [] });
+      resolve({ count: 0, trouves: 0, resultats: [] });
       return;
     }
     google.script.run
       .withSuccessHandler(data => resolve(data))
-      .withFailureHandler(err => resolve({ error: err.message, joueurs: [] }))
-      .RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club);
+      .withFailureHandler(err => resolve({ error: err.message, count: 0, trouves: 0, resultats: [] }))
+      .VERIFIER_LICENCES_BATCH_JSON(participants, club, forceScraping);
   });
 }
 
@@ -262,6 +274,8 @@ async function verifierLicences() {
   const loader = document.getElementById("loader");
   const resultDiv = document.getElementById("result");
   const progressBar = document.getElementById("progressBar");
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim() || "Marseille-Echecs";
 
   resultDiv.innerHTML = "";
   btnVerify.disabled = true;
@@ -284,40 +298,54 @@ async function verifierLicences() {
       return;
     }
 
-    const clubCible = "Marseille-Echecs";
     const total = rows.length;
     progressBar.max = total;
 
+    // Normalisation des participants depuis les colonnes Excel possibles
+    const participants = rows.map((row, idx) => ({
+      rowId: idx + 1,
+      prenom: (row["Prénom participant"] || row["Prénom"] || row["Prenom"] || "").toString().trim(),
+      nom: (row["Nom participant"] || row["Nom"] || "").toString().trim(),
+      paiement: (row["Paiement"] || row["Statut paiement"] || "").toString().trim(),
+      licence: (row["Licence"] || row["N° FFE"] || row["NrFFE"] || row["Code FFE"] || "").toString().trim()
+    }));
+
+    const BATCH_SIZE = 25;
     const resultats = [];
+    const totalBatches = Math.ceil(total / BATCH_SIZE);
 
-    for (let i = 0; i < total; i++) {
-      const row = rows[i];
-      const prenom = (row["Prénom participant"] || "").toString().trim();
-      const nom = (row["Nom participant"] || "").toString().trim();
-      const paiement = (row["Paiement"] || "").toString().trim();
+    for (let b = 0; b < totalBatches; b++) {
+      const chunk = participants.slice(b * BATCH_SIZE, (b + 1) * BATCH_SIZE);
+      const currentCount = Math.min(total, (b + 1) * BATCH_SIZE);
 
-      loader.innerText = `Vérification en cours (${i + 1}/${total}) : ${prenom} ${nom}...`;
-      progressBar.value = i + 1;
+      loader.innerText = `Vérification par lot en cours (${currentCount}/${total}) [Club : ${clubCible}]...`;
 
-      let ffeData = null;
-      if (nom || prenom) {
-        ffeData = await searchPlayerFFE(nom, prenom, clubCible);
+      const resp = await verifyLicencesBatch(chunk, clubCible);
+      if (resp && resp.resultats && resp.resultats.length > 0) {
+        resp.resultats.forEach(r => resultats.push(r));
+      } else {
+        // Fallback si échec batch
+        chunk.forEach(p => {
+          resultats.push({
+            nomExport: p.nom,
+            prenomExport: p.prenom,
+            paiement: p.paiement,
+            nrFFE: p.licence || "-",
+            npFFE: "-",
+            af: "-",
+            elo: "-",
+            club: "-",
+            trouve: false,
+            source: null
+          });
+        });
       }
 
-      const joueurTrouve = (ffeData && ffeData.joueurs && ffeData.joueurs.length > 0) ? ffeData.joueurs[0] : null;
-
-      resultats.push({
-        nomExport: nom,
-        prenomExport: prenom,
-        paiement: paiement,
-        nrFFE: joueurTrouve ? joueurTrouve.nrFFE : "-",
-        npFFE: joueurTrouve ? joueurTrouve.np : "-",
-        af: joueurTrouve ? joueurTrouve.af : "-",
-        trouve: !!joueurTrouve
-      });
+      progressBar.value = currentCount;
     }
 
-    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s).`;
+    const trouvesCount = resultats.filter(r => r.trouve).length;
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${trouvesCount} licencié(s) validé(s).`;
     renderTable(resultats);
 
   } catch (err) {
@@ -333,20 +361,25 @@ function renderTable(data) {
     <th>NrFFE</th>
     <th>Nom Prénom (FFE)</th>
     <th>Af.</th>
+    <th>Elo</th>
     <th>Paiement</th>
+    <th>Source</th>
     <th>Statut</th>
   </tr></thead><tbody>`;
 
   data.forEach(item => {
     const statusClass = item.trouve ? "status-ok" : "status-missing";
     const statusText = item.trouve ? "Trouvé" : "Non trouvé";
+    const sourceBadge = item.source ? `<span class="badge-af">${escapeHtml(item.source)}</span>` : "-";
 
     html += `<tr>
-      <td><strong>${item.nomExport}</strong> ${item.prenomExport}</td>
-      <td>${item.nrFFE}</td>
-      <td>${item.npFFE}</td>
-      <td><span class="badge-af">${item.af}</span></td>
-      <td>${item.paiement}</td>
+      <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
+      <td>${escapeHtml(item.nrFFE)}</td>
+      <td>${escapeHtml(item.npFFE)}</td>
+      <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
+      <td>${escapeHtml(item.elo || "-")}</td>
+      <td>${escapeHtml(item.paiement)}</td>
+      <td>${sourceBadge}</td>
       <td class="${statusClass}">${statusText}</td>
     </tr>`;
   });
@@ -357,4 +390,4 @@ function renderTable(data) {
 </script>
 
 </body>
-</html>
+</html>
