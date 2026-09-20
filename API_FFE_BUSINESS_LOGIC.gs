@@ -157,3 +157,91 @@ function ffeRechercheClubJoueurs(club, taskId, forceScraping = false) {
   }
 }
 
+/**
+ * Vérifie un lot de participants (import Excel) de façon optimisée.
+ * Résout les licences en lot via ChessXP batch si des numéros de licence sont fournis,
+ * ou via la recherche hybride nominale filtrée par club.
+ *
+ * @param {Array<Object>} participants - Liste des participants [{ nom, prenom, licence, paiement }]
+ * @param {string} clubCible - Nom du club cible pour filtrer l'appartenance
+ * @param {boolean} [forceScraping=false] - Forcer le scraping direct FFE
+ * @returns {Array<Object>} Liste des résultats détaillés
+ */
+function ffeVerifierLicencesBatch(participants, clubCible, forceScraping = false) {
+  if (!participants || !Array.isArray(participants)) return [];
+
+  const licenceMap = new Map();
+  const licencesToQuery = [];
+
+  if (!forceScraping) {
+    participants.forEach(p => {
+      const lic = (p.licence || p.nrFFE || "").trim().toUpperCase();
+      if (lic && /^[A-Z][0-9]+/.test(lic)) {
+        licencesToQuery.push(lic);
+      }
+    });
+
+    // Requêtes batch ChessXP par tranches de 50
+    for (let i = 0; i < licencesToQuery.length; i += 50) {
+      const chunk = licencesToQuery.slice(i, i + 50);
+      try {
+        const batchResults = chessXpGetPlayersBatch(chunk);
+        batchResults.forEach(j => {
+          if (j && j.NrFFE()) {
+            licenceMap.set(j.NrFFE().toUpperCase(), j);
+          }
+        });
+      } catch (e) {
+        if (DEBUG) Logger.log("Erreur batch licences: " + e.message);
+      }
+    }
+  }
+
+  const resultats = [];
+
+  for (let i = 0; i < participants.length; i++) {
+    const p = participants[i];
+    const nom = (p.nom || p.nomExport || "").trim();
+    const prenom = (p.prenom || p.prenomExport || "").trim();
+    const lic = (p.licence || p.nrFFE || "").trim().toUpperCase();
+    const paiement = (p.paiement || "").trim();
+
+    let joueurTrouve = null;
+
+    // 1. Si on a trouvé la licence via le batch ChessXP
+    if (lic && licenceMap.has(lic)) {
+      joueurTrouve = licenceMap.get(lic);
+    }
+
+    // 2. Sinon recherche nominale filtrée par club via la couche hybride
+    if (!joueurTrouve && (nom || prenom)) {
+      const res = ffeRechercheNominalClub(nom, prenom, clubCible, forceScraping);
+      if (res && res.joueurs && res.joueurs.length > 0) {
+        joueurTrouve = res.joueurs[0];
+      }
+    }
+
+    resultats.push({
+      nomExport: nom,
+      prenomExport: prenom,
+      paiement: paiement,
+      nrFFE: joueurTrouve ? joueurTrouve.NrFFE() : "-",
+      npFFE: joueurTrouve ? joueurTrouve.NP() : "-",
+      af: joueurTrouve ? joueurTrouve.Af() : "-",
+      elo: joueurTrouve ? joueurTrouve.Elo() : "-",
+      club: joueurTrouve ? joueurTrouve.Club() : "-",
+      trouve: !!joueurTrouve,
+      source: joueurTrouve ? (joueurTrouve.Source ? joueurTrouve.Source() : (joueurTrouve.source || "CHESSXP")) : null,
+      lienFFE: joueurTrouve && joueurTrouve.IdFFE()
+        ? `https://www.echecs.asso.fr/FicheJoueur.aspx?Id=${joueurTrouve.IdFFE()}`
+        : null,
+      lienFIDE: joueurTrouve && joueurTrouve.IdFIDE()
+        ? `https://ratings.fide.com/profile/${joueurTrouve.IdFIDE()}`
+        : null
+    });
+  }
+
+  return resultats;
+}
+
+

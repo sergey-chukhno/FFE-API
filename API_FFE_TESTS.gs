@@ -19,6 +19,7 @@ function test_ALL() {
 
   test_CHESSXP_API();
   test_HYBRID_FALLBACK();
+  test_EXCEL_BATCH_VERIFICATION();
   test_BENCHMARK_SCRAPING_VS_API();
 
   TestRunner.summary();
@@ -653,6 +654,112 @@ function test_HYBRID_FALLBACK() {
       return `${json.source} | FIDE: ${!!hasFide}`;
     },
     validator: (act) => act === "CHESSXP | FIDE: true"
+  });
+
+}
+
+/*************************************************************
+ * TEST VERIFICATION LICENCES BATCH (EXCEL)
+ *************************************************************/
+
+function test_EXCEL_BATCH_VERIFICATION() {
+
+  TestRunner.startSuite("EXCEL BATCH VERIFICATION");
+
+  // Test 1: Vérification par numéro de licence en batch via ChessXP
+  TestRunner.run({
+    desc: "Batch avec licences directes (AZARI K51184 + VACHIER-LAGRAVE R00057)",
+    participants: [
+      { nom: "AZARI", prenom: "William", licence: "K51184", paiement: "Payé" },
+      { nom: "VACHIER-LAGRAVE", prenom: "Maxime", licence: "R00057", paiement: "En attente" }
+    ],
+    club: "Marseille-Echecs",
+    expected: "2 trouvés, source CHESSXP",
+    fn: (t) => {
+      const resp = VERIFIER_LICENCES_BATCH_JSON(t.participants, t.club);
+      const trouves = resp.trouves;
+      const src0 = resp.resultats[0].source;
+      return `${trouves} trouvés, source ${src0}`;
+    },
+    validator: (act) => act.includes("2 trouvés") && act.includes("CHESSXP")
+  });
+
+  // Test 2: Batch nominal sans licence fournie (résolution par nom/prénom + club)
+  TestRunner.run({
+    desc: "Batch nominal sans licence avec filtre club",
+    participants: [
+      { nom: "AZARI", prenom: "William", licence: "", paiement: "Payé" }
+    ],
+    club: "Marseille-Echecs",
+    expected: "Trouvé avec NrFFE K51184",
+    fn: (t) => {
+      const resp = VERIFIER_LICENCES_BATCH_JSON(t.participants, t.club);
+      if (!resp.resultats || resp.resultats.length === 0) return "Vide";
+      const r = resp.resultats[0];
+      return `${r.trouve ? "Trouvé" : "Non trouvé"} | ${r.nrFFE} | ${r.club}`;
+    },
+    validator: (act) => act.includes("Trouvé") && act.includes("K51184") && act.includes("Marseille-Echecs")
+  });
+
+  // Test 3: Batch avec participant inexistant
+  TestRunner.run({
+    desc: "Participant inexistant non trouvé",
+    participants: [
+      { nom: "ZYZYGY", prenom: "Robot", licence: "Z99999", paiement: "Non" }
+    ],
+    club: "Marseille-Echecs",
+    expected: "Non trouvé",
+    fn: (t) => {
+      const resp = VERIFIER_LICENCES_BATCH_JSON(t.participants, t.club);
+      const r = resp.resultats[0];
+      return r.trouve ? "Trouvé" : "Non trouvé";
+    },
+    validator: validateEquals
+  });
+
+  // Test 4: Forçage manuel scraping direct (forceScraping = true)
+  TestRunner.run({
+    desc: "Batch forcé en scraping FFE direct (forceScraping=true)",
+    participants: [
+      { nom: "AZARI", prenom: "William", licence: "", paiement: "Payé" }
+    ],
+    club: "Marseille-Echecs",
+    expected: "FFE_SCRAPING",
+    fn: (t) => {
+      const resp = VERIFIER_LICENCES_BATCH_JSON(t.participants, t.club, true);
+      return resp.resultats[0].source;
+    },
+    validator: (src) => src === "FFE_SCRAPING"
+  });
+
+  // Test 5: Benchmark de performance Batch ChessXP vs séquentiel
+  TestRunner.run({
+    desc: "Benchmark performance Batch licences (10 joueurs)",
+    expected: "Batch rapide (< 5000 ms)",
+    fn: () => {
+      const sampleLicences = [
+        "K51184", "R00057", "A00001", "B00002", "C00003",
+        "D00004", "E00005", "F00006", "G00007", "H00008"
+      ];
+      const participants = sampleLicences.map((lic, i) => ({
+        nom: `Joueur${i}`,
+        prenom: `Test${i}`,
+        licence: lic,
+        paiement: "OK"
+      }));
+
+      const t0 = Date.now();
+      const batchResp = VERIFIER_LICENCES_BATCH_JSON(participants, "Marseille-Echecs");
+      const batchTime = Date.now() - t0;
+
+      Logger.log(`Batch verification 10 licences: ${batchTime} ms (${batchResp.trouves} trouvés)`);
+
+      return {
+        batch_ms: batchTime,
+        success: batchResp.count === 10
+      };
+    },
+    validator: (res) => res.success && res.batch_ms < 5000
   });
 
 }

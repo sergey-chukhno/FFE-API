@@ -50,6 +50,28 @@ function RECHERCHE_FFE_CLUB_JOUEURS_JSON(club, taskId, forceScraping = false) {
   };
 }
 
+/**
+ * Vérification en lot d'une liste de participants (import Excel).
+ *
+ * @param {Array<Object>} participants - Liste des participants [{ nom, prenom, licence, paiement }]
+ * @param {string} clubCible - Nom du club pour filtrer
+ * @param {boolean} [forceScraping=false] - Forcer l'interrogation officielle directe FFE
+ * @returns {{count: number, trouves: number, resultats: Array<Object>}}
+ */
+function VERIFIER_LICENCES_BATCH_JSON(participants, clubCible, forceScraping = false) {
+  if (!participants || !Array.isArray(participants) || participants.length === 0) {
+    return { error: "Paramètre 'participants' manquant ou invalide", count: 0, trouves: 0, resultats: [] };
+  }
+
+  const resultats = ffeVerifierLicencesBatch(participants, clubCible, forceScraping);
+
+  return {
+    count: resultats.length,
+    trouves: resultats.filter(r => r.trouve).length,
+    resultats: resultats
+  };
+}
+
 /*************************************************************
  * POLLING VIA CACHE SERVICE
  *************************************************************/
