@@ -70,10 +70,88 @@ progress::-webkit-progress-value { background-color: var(--accent); transition: 
 progress::-moz-progress-bar { background-color: var(--accent); }
 
 /* ===== TABLE ===== */
-table { width:100%; border-collapse:collapse; margin-top:20px; font-size:14px; }
-th, td { padding:10px; border-bottom:1px solid #ddd; text-align:left; }
+table { width:100%; border-collapse:collapse; margin-top:15px; font-size:14px; }
+th, td { padding:10px; border-bottom:1px solid #ddd; text-align:left; vertical-align:middle; }
 th { cursor:pointer; background:var(--accent); color:white; }
 tr:hover { background:rgba(0,0,0,0.05); }
+
+/* ===== BADGES SOURCE ===== */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.source-chessxp {
+  background: #e6f7ff;
+  color: #0070f3;
+  border: 1px solid #91d5ff;
+}
+body.dark .source-chessxp {
+  background: rgba(0, 112, 243, 0.2);
+  color: #60a5fa;
+  border-color: #1d4ed8;
+}
+.source-scraping {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+body.dark .source-scraping {
+  background: rgba(212, 107, 8, 0.2);
+  color: #fbbf24;
+  border-color: #b45309;
+}
+
+/* ===== BOUTON RE-VERIFIER ===== */
+.btn-recheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: #fafafa;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  margin-left: 6px;
+}
+.btn-recheck:hover {
+  background: #f0f0f0;
+  border-color: #1f3c88;
+  color: #1f3c88;
+}
+body.dark .btn-recheck {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #ddd;
+}
+body.dark .btn-recheck:hover {
+  background: #333;
+  border-color: #4c8bf5;
+  color: #4c8bf5;
+}
+.btn-recheck:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.row-updated {
+  animation: highlightRow 1.5s ease;
+}
+@keyframes highlightRow {
+  0% { background-color: rgba(16, 185, 129, 0.3); }
+  100% { background-color: transparent; }
+}
 
 .loader { margin-top:15px; font-weight:500; }
 .footer { margin-top:20px; font-size:12px; color:#888; text-align:center; }
@@ -108,6 +186,54 @@ tr:hover { background:rgba(0,0,0,0.05); }
 </div>
 
 <script>
+// Polyfill d'émulation pour test local autonome hors Google Apps Script
+if (typeof google === "undefined" || !google.script || !google.script.run) {
+  const LOCAL_RPC_URL = "http://localhost:3030/api/rpc";
+  function createGasRunner(successCb, failureCb) {
+    return new Proxy({}, {
+      get(target, prop) {
+        if (prop === "withSuccessHandler") {
+          return function(cb) {
+            return createGasRunner(cb, failureCb);
+          };
+        }
+        if (prop === "withFailureHandler") {
+          return function(cb) {
+            return createGasRunner(successCb, cb);
+          };
+        }
+        return function(...args) {
+          fetch(LOCAL_RPC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fn: prop, args: args })
+          })
+          .then(res => {
+            if (!res.ok) throw new Error("Erreur HTTP " + res.status);
+            return res.json();
+          })
+          .then(data => {
+            if (data && data.error && !data.count && !data.joueurs) {
+              if (failureCb) failureCb(new Error(data.error));
+            } else {
+              if (successCb) successCb(data);
+            }
+          })
+          .catch(err => {
+            if (failureCb) failureCb(new Error("Serveur local non joignable. Lancez : node dev_server.js"));
+          });
+        };
+      }
+    });
+  }
+
+  window.google = {
+    script: {
+      run: createGasRunner()
+    }
+  };
+}
+
 document.getElementById("year").innerText = new Date().getFullYear();
 let joueursData = [];
 let sortDirection = 1;
@@ -192,15 +318,66 @@ function recherche() {
   }
 }
 
+// Helper sécurisé d'échappement anti-XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
+
+function renderSourceBadge(source) {
+  if (!source) return "-";
+  const s = String(source).toUpperCase();
+  if (s.includes("CHESSXP")) {
+    return `<span class="source-badge source-chessxp" title="Données ChessXP (synchronisation hebdomadaire)">⚡ API ChessXP</span>`;
+  } else if (s.includes("FFE") || s.includes("SCRAPING")) {
+    return `<span class="source-badge source-scraping" title="Données officielles en direct FFE (temps réel)">🌐 FFE Direct</span>`;
+  }
+  return `<span class="source-badge">${escapeHtml(source)}</span>`;
+}
+
+function renderPlayerRowHtml(j, idx) {
+  const rowSource = j.source || "CHESSXP";
+  const ffeLink = j.lienFFE ? `<a href="${escapeHtml(j.lienFFE)}" target="_blank" rel="noopener">FFE</a>` : "";
+  const fideLink = j.lienFIDE ? ` | <a href="${escapeHtml(j.lienFIDE)}" target="_blank" rel="noopener">FIDE</a>` : "";
+
+  return `<tr id="row-player-${idx}">
+    <td>${escapeHtml(j.nrFFE || "-")}</td>
+    <td><strong>${escapeHtml(j.nom || "")}</strong> ${escapeHtml(j.prenom || (j.np ? j.np.replace(j.nom || "", "").trim() : ""))}</td>
+    <td>${escapeHtml(j.af || "-")}</td>
+    <td>${escapeHtml(j.elo || "0")}</td>
+    <td>${escapeHtml(j.rapide || "0")}</td>
+    <td>${escapeHtml(j.blitz || "0")}</td>
+    <td>${escapeHtml(j.cat || "-")}</td>
+    <td>${escapeHtml(j.club || "Sans club")}</td>
+    <td id="source-cell-${idx}">${renderSourceBadge(rowSource)}</td>
+    <td>
+      ${ffeLink}${fideLink}
+      <button id="btn-recheck-${idx}" class="btn-recheck" onclick="recheckPlayerRow(${idx})" title="Vérifier ce joueur en direct sur le site officiel de la FFE">
+        🔄 FFE direct
+      </button>
+    </td>
+  </tr>`;
+}
+
 function renderResult(data) {
   const loader = document.getElementById("loader");
   loader.innerText = "";
   if (!data || data.error) {
-    document.getElementById("result").innerHTML = "<p>" + (data?.error || "Aucun résultat") + "</p>";
+    document.getElementById("result").innerHTML = "<p>" + escapeHtml(data?.error || "Aucun résultat") + "</p>";
     return;
   }
-  joueursData = data.joueurs;
-  let html = `<p><strong>${data.count}</strong> résultat(s)</p><table><thead><tr>
+  joueursData = data.joueurs || [];
+  const globalSource = data.source || (joueursData[0] ? joueursData[0].source : "CHESSXP");
+
+  let html = `<div style="display:flex; justify-content:space-between; align-items:center; margin-top:15px; margin-bottom:8px; flex-wrap:wrap; gap:10px;">
+    <div><strong>${escapeHtml(data.count)}</strong> résultat(s) &nbsp; ${renderSourceBadge(globalSource)}</div>
+  </div>
+  <table><thead><tr>
     <th onclick="sortTable('nrFFE')">NrFFE</th>
     <th onclick="sortTable('np')">NOM Prénom</th>
     <th onclick="sortTable('af')">Af.</th>
@@ -209,14 +386,81 @@ function renderResult(data) {
     <th onclick="sortTable('blitz')">Blitz</th>
     <th onclick="sortTable('cat')">Cat</th>
     <th onclick="sortTable('club')">Club</th>
-    <th>Lien</th>
-    </tr></thead><tbody>`;
-  joueursData.forEach(j => {
-    html += `<tr><td>${j.nrFFE}</td><td>${j.np}</td><td>${j.af}</td><td>${j.elo}</td><td>${j.rapide}</td><td>${j.blitz}</td><td>${j.cat}</td><td>${j.club}</td>
-      <td>${j.lienFFE ? `<a href="${j.lienFFE}" target="_blank">FFE</a>` : ""}${j.lienFIDE ? ` | <a href="${j.lienFIDE}" target="_blank">FIDE</a>` : ""}</td></tr>`;
+    <th>Source</th>
+    <th>Actions</th>
+  </tr></thead><tbody>`;
+
+  joueursData.forEach((j, idx) => {
+    html += renderPlayerRowHtml(j, idx);
   });
   html += "</tbody></table>";
   document.getElementById("result").innerHTML = html;
+}
+
+function recheckPlayerRow(idx) {
+  const j = joueursData[idx];
+  if (!j) return;
+
+  const btn = document.getElementById(`btn-recheck-${idx}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳ Direct...";
+  }
+
+  const nom = (j.nom || (j.np ? j.np.split(" ")[0] : "")).trim();
+  const prenom = (j.prenom || (j.np ? j.np.split(" ").slice(1).join(" ") : "")).trim();
+  const clubInput = (document.getElementById("club")?.value || "").trim();
+  const clubParam = clubInput || (j.club && j.club !== "Sans club" ? j.club : "");
+
+  const handleSuccess = (res) => {
+    if (res && res.joueurs && res.joueurs.length > 0) {
+      const found = res.joueurs.find(p => p.nrFFE === j.nrFFE) || res.joueurs[0];
+      const updated = Object.assign({}, j, found, { source: "FFE_SCRAPING" });
+      joueursData[idx] = updated;
+
+      const row = document.getElementById(`row-player-${idx}`);
+      if (row) {
+        row.outerHTML = renderPlayerRowHtml(updated, idx);
+        const newRow = document.getElementById(`row-player-${idx}`);
+        if (newRow) {
+          newRow.classList.add("row-updated");
+          const newBtn = document.getElementById(`btn-recheck-${idx}`);
+          if (newBtn) {
+            newBtn.innerText = "✓ FFE Direct";
+            setTimeout(() => { if (newBtn) newBtn.innerText = "🔄 FFE direct"; }, 3000);
+          }
+        }
+      }
+    } else {
+      if (btn) {
+        btn.innerText = "⚠️ Non trouvé";
+        btn.disabled = false;
+        setTimeout(() => { if (btn) btn.innerText = "🔄 FFE direct"; }, 3000);
+      }
+    }
+  };
+
+  const handleFailure = (err) => {
+    if (btn) {
+      btn.innerText = "Erreur FFE";
+      btn.disabled = false;
+      setTimeout(() => { if (btn) btn.innerText = "🔄 FFE direct"; }, 3000);
+    }
+  };
+
+  if (typeof google === "undefined" || !google.script || !google.script.run) {
+    setTimeout(() => {
+      handleSuccess({
+        joueurs: [Object.assign({}, j, { source: "FFE_SCRAPING" })]
+      });
+    }, 400);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(handleSuccess)
+    .withFailureHandler(handleFailure)
+    .REVERIFIER_JOUEUR_DIRECT_FFE_JSON(nom, prenom, clubParam, j.nrFFE);
 }
 
 function sortTable(key) {
@@ -235,7 +479,7 @@ function sortTable(key) {
     return valA.localeCompare(valB) * sortDirection;
   });
 
-  renderResult({ count: joueursData.length, joueurs: joueursData });
+  renderResult({ count: joueursData.length, joueurs: joueursData, source: (joueursData[0] ? joueursData[0].source : "CHESSXP") });
 }
 
 function toggleTheme() {

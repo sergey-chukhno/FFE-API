@@ -132,7 +132,9 @@ function mapChessXpToJoueur(p) {
     joueur.m_idFIDE = String(p.fide_id);
   }
 
-  // Métadonnées d'audit de la source
+  // Métadonnées d'audit de la source et identité
+  joueur.m_nom = p.last_name || "";
+  joueur.m_prenom = p.first_name || "";
   joueur.source = "CHESSXP";
   if (p.source && p.source.ingested_at) {
     joueur.ingestedAt = p.source.ingested_at;

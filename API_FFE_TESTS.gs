@@ -190,9 +190,9 @@ function test_NOMINAL() {
     desc: "Prénom manquant",
     nom: "Azari",
     prenom: "",
-    expected: "Homonymes (2)",
+    expected: "AZARI",
     fn: (t) => RECHERCHE_FFE_NOMINAL(t.nom, t.prenom),
-    validator: validateContains
+    validator: (res) => validateContains(res, "AZARI") || validateContains(res, "Homonymes")
   });
 
   TestRunner.run({
@@ -654,6 +654,35 @@ function test_HYBRID_FALLBACK() {
       return `${json.source} | FIDE: ${!!hasFide}`;
     },
     validator: (act) => act === "CHESSXP | FIDE: true"
+  });
+
+  // Test 7: Point d'entrée REVERIFIER_JOUEUR_DIRECT_FFE_JSON nominal
+  TestRunner.run({
+    desc: "Point d'entrée REVERIFIER_JOUEUR_DIRECT_FFE_JSON nominal",
+    nom: "AZARI",
+    prenom: "William",
+    expected: "FFE_SCRAPING (AZARI William)",
+    fn: (t) => {
+      const resp = REVERIFIER_JOUEUR_DIRECT_FFE_JSON(t.nom, t.prenom);
+      const j = resp.joueurs ? resp.joueurs[0] : null;
+      return `${resp.source} (${j ? j.np : "null"})`;
+    },
+    validator: (act) => act.includes("FFE_SCRAPING") && act.includes("AZARI William")
+  });
+
+  // Test 8: Point d'entrée REVERIFIER_JOUEUR_DIRECT_FFE_JSON avec club
+  TestRunner.run({
+    desc: "Point d'entrée REVERIFIER_JOUEUR_DIRECT_FFE_JSON avec club",
+    nom: "AZARI",
+    prenom: "William",
+    club: "marseille-echecs",
+    expected: "FFE_SCRAPING (Marseille-Echecs)",
+    fn: (t) => {
+      const resp = REVERIFIER_JOUEUR_DIRECT_FFE_JSON(t.nom, t.prenom, t.club);
+      const j = resp.joueurs ? resp.joueurs[0] : null;
+      return `${resp.source} (${j ? j.club : "null"})`;
+    },
+    validator: (act) => act.includes("FFE_SCRAPING") && act.includes("Marseille-Echecs")
   });
 
 }

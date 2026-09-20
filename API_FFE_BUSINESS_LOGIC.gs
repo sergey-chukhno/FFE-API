@@ -20,11 +20,8 @@ function ffeRechercheNominal(nom, prenom, forceScraping = false) {
   if (!forceScraping) {
     try {
       const apiJoueurs = chessXpSearchPlayersByName(nom, prenom);
-      // Si on cherche avec prénom précis ou si l'API retourne plusieurs homonymes (>1)
       if (apiJoueurs && apiJoueurs.length > 0) {
-        if (hasPrenom || apiJoueurs.length > 1) {
-          return { joueurs: apiJoueurs, source: "CHESSXP" };
-        }
+        return { joueurs: apiJoueurs, source: "CHESSXP" };
       }
     } catch (e) {
       if (DEBUG) Logger.log(`[FALLBACK ACTIVÉ] Erreur API ChessXP: ${e.message} → Bascule Scraping`);

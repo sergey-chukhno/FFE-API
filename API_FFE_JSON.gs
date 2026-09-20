@@ -72,6 +72,27 @@ function VERIFIER_LICENCES_BATCH_JSON(participants, clubCible, forceScraping = f
   };
 }
 
+/**
+ * Point d'entrée pour re-vérifier un joueur spécifique en direct sur le site officiel FFE (Scraping).
+ *
+ * @param {string} nom - Nom de famille
+ * @param {string} prenom - Prénom
+ * @param {string} [club] - Nom du club optionnel
+ * @param {string} [licence] - Numéro de licence optionnel
+ * @returns {Object} Résultat JSON officiel direct FFE
+ */
+function REVERIFIER_JOUEUR_DIRECT_FFE_JSON(nom, prenom, club, licence) {
+  if (DEBUG) {
+    Logger.log(`[RE-VERIF DIRECT FFE] Demandé pour ${nom} ${prenom} (club: ${club || '-'}, lic: ${licence || '-'})`);
+  }
+
+  if (club && club.trim()) {
+    return RECHERCHE_FFE_NOMINAL_CLUB_JSON(nom, prenom, club, true);
+  }
+
+  return RECHERCHE_FFE_NOMINAL_JSON(nom, prenom, true);
+}
+
 /*************************************************************
  * POLLING VIA CACHE SERVICE
  *************************************************************/

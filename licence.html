@@ -130,6 +130,83 @@ tr:hover { background:rgba(0,0,0,0.05); }
 .status-ok { color: #10b981; font-weight: 600; }
 .status-missing { color: #ef4444; font-weight: 600; }
 
+/* ===== BADGES SOURCE ===== */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.source-chessxp {
+  background: #e6f7ff;
+  color: #0070f3;
+  border: 1px solid #91d5ff;
+}
+body.dark .source-chessxp {
+  background: rgba(0, 112, 243, 0.2);
+  color: #60a5fa;
+  border-color: #1d4ed8;
+}
+.source-scraping {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+body.dark .source-scraping {
+  background: rgba(212, 107, 8, 0.2);
+  color: #fbbf24;
+  border-color: #b45309;
+}
+
+/* ===== BOUTON RE-VERIFIER ===== */
+.btn-recheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: #fafafa;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-recheck:hover {
+  background: #f0f0f0;
+  border-color: #1f3c88;
+  color: #1f3c88;
+}
+body.dark .btn-recheck {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #ddd;
+}
+body.dark .btn-recheck:hover {
+  background: #333;
+  border-color: #4c8bf5;
+  color: #4c8bf5;
+}
+.btn-recheck:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.row-updated {
+  animation: highlightRow 1.5s ease;
+}
+@keyframes highlightRow {
+  0% { background-color: rgba(16, 185, 129, 0.3); }
+  100% { background-color: transparent; }
+}
+
 .footer { margin-top:30px; font-size:12px; color:#888; text-align:center; }
 </style>
 </head>
@@ -167,6 +244,54 @@ tr:hover { background:rgba(0,0,0,0.05); }
 </div>
 
 <script>
+// Polyfill d'émulation pour test local autonome hors Google Apps Script
+if (typeof google === "undefined" || !google.script || !google.script.run) {
+  const LOCAL_RPC_URL = "http://localhost:3030/api/rpc";
+  function createGasRunner(successCb, failureCb) {
+    return new Proxy({}, {
+      get(target, prop) {
+        if (prop === "withSuccessHandler") {
+          return function(cb) {
+            return createGasRunner(cb, failureCb);
+          };
+        }
+        if (prop === "withFailureHandler") {
+          return function(cb) {
+            return createGasRunner(successCb, cb);
+          };
+        }
+        return function(...args) {
+          fetch(LOCAL_RPC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fn: prop, args: args })
+          })
+          .then(res => {
+            if (!res.ok) throw new Error("Erreur HTTP " + res.status);
+            return res.json();
+          })
+          .then(data => {
+            if (data && data.error && !data.count && !data.resultats) {
+              if (failureCb) failureCb(new Error(data.error));
+            } else {
+              if (successCb) successCb(data);
+            }
+          })
+          .catch(err => {
+            if (failureCb) failureCb(new Error("Serveur local non joignable. Lancez : node dev_server.js"));
+          });
+        };
+      }
+    });
+  }
+
+  window.google = {
+    script: {
+      run: createGasRunner()
+    }
+  };
+}
+
 document.getElementById("year").innerText = new Date().getFullYear();
 let fileData = null;
 
@@ -355,7 +480,43 @@ async function verifierLicences() {
   }
 }
 
+let dernierResultats = [];
+
+function renderSourceBadge(source) {
+  if (!source) return "-";
+  const s = String(source).toUpperCase();
+  if (s.includes("CHESSXP")) {
+    return `<span class="source-badge source-chessxp" title="Données ChessXP (synchronisation hebdomadaire)">⚡ ChessXP</span>`;
+  } else if (s.includes("FFE") || s.includes("SCRAPING")) {
+    return `<span class="source-badge source-scraping" title="Données officielles en direct FFE (temps réel)">🌐 FFE Direct</span>`;
+  }
+  return `<span class="source-badge">${escapeHtml(source)}</span>`;
+}
+
+function renderLicenceRowHtml(item, idx) {
+  const statusClass = item.trouve ? "status-ok" : "status-missing";
+  const statusText = item.trouve ? "Trouvé" : "Non trouvé";
+
+  return `<tr id="row-lic-${idx}">
+    <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
+    <td>${escapeHtml(item.nrFFE)}</td>
+    <td>${escapeHtml(item.npFFE)}</td>
+    <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
+    <td>${escapeHtml(item.elo || "-")}</td>
+    <td>${escapeHtml(item.paiement)}</td>
+    <td id="lic-source-${idx}">${renderSourceBadge(item.source)}</td>
+    <td id="lic-status-${idx}" class="${statusClass}">${statusText}</td>
+    <td>
+      <button id="btn-recheck-lic-${idx}" class="btn-recheck" onclick="recheckParticipantFFE(${idx})" title="Vérifier ce participant en direct sur le site officiel de la FFE">
+        🔄 Re-vérifier FFE
+      </button>
+    </td>
+  </tr>`;
+}
+
 function renderTable(data) {
+  dernierResultats = data || [];
+
   let html = `<table><thead><tr>
     <th>Participant (Export)</th>
     <th>NrFFE</th>
@@ -365,27 +526,95 @@ function renderTable(data) {
     <th>Paiement</th>
     <th>Source</th>
     <th>Statut</th>
+    <th>Action</th>
   </tr></thead><tbody>`;
 
-  data.forEach(item => {
-    const statusClass = item.trouve ? "status-ok" : "status-missing";
-    const statusText = item.trouve ? "Trouvé" : "Non trouvé";
-    const sourceBadge = item.source ? `<span class="badge-af">${escapeHtml(item.source)}</span>` : "-";
-
-    html += `<tr>
-      <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
-      <td>${escapeHtml(item.nrFFE)}</td>
-      <td>${escapeHtml(item.npFFE)}</td>
-      <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
-      <td>${escapeHtml(item.elo || "-")}</td>
-      <td>${escapeHtml(item.paiement)}</td>
-      <td>${sourceBadge}</td>
-      <td class="${statusClass}">${statusText}</td>
-    </tr>`;
+  dernierResultats.forEach((item, idx) => {
+    html += renderLicenceRowHtml(item, idx);
   });
 
   html += "</tbody></table>";
   document.getElementById("result").innerHTML = html;
+}
+
+function recheckParticipantFFE(idx) {
+  const item = dernierResultats[idx];
+  if (!item) return;
+
+  const btn = document.getElementById(`btn-recheck-lic-${idx}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳ Direct FFE...";
+  }
+
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim() || "Marseille-Echecs";
+
+  const handleSuccess = (resp) => {
+    if (resp && resp.joueurs && resp.joueurs.length > 0) {
+      const j = resp.joueurs[0];
+      item.trouve = true;
+      item.nrFFE = j.nrFFE || "-";
+      item.npFFE = j.np || "-";
+      item.af = j.af || "-";
+      item.elo = j.elo || "-";
+      item.club = j.club || "-";
+      item.source = "FFE_SCRAPING";
+      item.lienFFE = j.lienFFE;
+      item.lienFIDE = j.lienFIDE;
+
+      const row = document.getElementById(`row-lic-${idx}`);
+      if (row) {
+        row.outerHTML = renderLicenceRowHtml(item, idx);
+        const newRow = document.getElementById(`row-lic-${idx}`);
+        if (newRow) {
+          newRow.classList.add("row-updated");
+          const newBtn = document.getElementById(`btn-recheck-lic-${idx}`);
+          if (newBtn) {
+            newBtn.innerText = "✓ FFE Direct";
+            setTimeout(() => { if (newBtn) newBtn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+          }
+        }
+      }
+    } else {
+      if (btn) {
+        btn.innerText = "⚠️ Non trouvé FFE";
+        btn.disabled = false;
+        setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+      }
+    }
+  };
+
+  const handleFailure = (err) => {
+    if (btn) {
+      btn.innerText = "Erreur FFE";
+      btn.disabled = false;
+      setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+    }
+  };
+
+  if (typeof google === "undefined" || !google.script || !google.script.run) {
+    setTimeout(() => {
+      item.trouve = true;
+      item.source = "FFE_SCRAPING";
+      handleSuccess({
+        joueurs: [{
+          nrFFE: item.nrFFE !== "-" ? item.nrFFE : "K51184",
+          np: `${item.nomExport} ${item.prenomExport}`,
+          af: "A",
+          elo: "1800",
+          club: clubCible,
+          source: "FFE_SCRAPING"
+        }]
+      });
+    }, 400);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(handleSuccess)
+    .withFailureHandler(handleFailure)
+    .REVERIFIER_JOUEUR_DIRECT_FFE_JSON(item.nomExport, item.prenomExport, clubCible, item.nrFFE);
 }
 </script>
 
