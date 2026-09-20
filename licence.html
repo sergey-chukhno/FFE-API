@@ -627,6 +627,7 @@ function renderLicenceRowHtml(item, idx) {
   const statusInfo = computeParticipantStatus(item, clubCible);
 
   return `<tr id="row-lic-${idx}">
+    <td style="color:#888; font-weight:600; text-align:center; width:40px;">${idx + 1}</td>
     <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
     <td>${escapeHtml(item.nrFFE)}</td>
     <td>${escapeHtml(item.npFFE)}</td>
@@ -666,6 +667,7 @@ function renderTable(data, page = 1) {
   const pageItems = dernierResultats.slice(startIdx, endIdx);
 
   let html = `<table><thead><tr>
+    <th style="width:40px; text-align:center;">#</th>
     <th>Participant (Export)</th>
     <th>NrFFE</th>
     <th>Nom Prénom (FFE)</th>
