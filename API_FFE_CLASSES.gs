@@ -41,9 +41,12 @@ Joueur.prototype.toString = function() {
 };
 
 Joueur.prototype.toJSON = function() {
+  const npParts = (this.m_np || "").trim().split(" ");
   const json = {
     nrFFE: this.m_nrFFE,
     np: this.m_np,
+    nom: this.m_nom || npParts[0] || "",
+    prenom: this.m_prenom || npParts.slice(1).join(" ") || "",
     af: this.m_af,
     elo: this.m_elo,
     rapide: this.m_rapide,

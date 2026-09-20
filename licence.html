@@ -40,7 +40,7 @@ body {
 
 /* ===== CARD ===== */
 .container {
-  max-width:1100px;
+  max-width:1200px;
   margin:20px auto 40px auto;
   background:var(--card);
   padding:30px;
@@ -128,7 +128,85 @@ tr:hover { background:rgba(0,0,0,0.05); }
 }
 
 .status-ok { color: #10b981; font-weight: 600; }
+.status-other-club { color: #f59e0b; font-weight: 600; }
 .status-missing { color: #ef4444; font-weight: 600; }
+
+/* ===== BADGES SOURCE ===== */
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+}
+.source-chessxp {
+  background: #e6f7ff;
+  color: #0070f3;
+  border: 1px solid #91d5ff;
+}
+body.dark .source-chessxp {
+  background: rgba(0, 112, 243, 0.2);
+  color: #60a5fa;
+  border-color: #1d4ed8;
+}
+.source-scraping {
+  background: #fff7e6;
+  color: #d46b08;
+  border: 1px solid #ffd591;
+}
+body.dark .source-scraping {
+  background: rgba(212, 107, 8, 0.2);
+  color: #fbbf24;
+  border-color: #b45309;
+}
+
+/* ===== BOUTON RE-VERIFIER ===== */
+.btn-recheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 4px;
+  border: 1px solid #d9d9d9;
+  background: #fafafa;
+  color: #333;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btn-recheck:hover {
+  background: #f0f0f0;
+  border-color: #1f3c88;
+  color: #1f3c88;
+}
+body.dark .btn-recheck {
+  background: #2a2a2a;
+  border-color: #444;
+  color: #ddd;
+}
+body.dark .btn-recheck:hover {
+  background: #333;
+  border-color: #4c8bf5;
+  color: #4c8bf5;
+}
+.btn-recheck:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.row-updated {
+  animation: highlightRow 1.5s ease;
+}
+@keyframes highlightRow {
+  0% { background-color: rgba(16, 185, 129, 0.3); }
+  100% { background-color: transparent; }
+}
 
 .footer { margin-top:30px; font-size:12px; color:#888; text-align:center; }
 </style>
@@ -167,6 +245,54 @@ tr:hover { background:rgba(0,0,0,0.05); }
 </div>
 
 <script>
+// Polyfill d'émulation pour test local autonome hors Google Apps Script
+if (typeof google === "undefined" || !google.script || !google.script.run) {
+  const LOCAL_RPC_URL = "http://localhost:3030/api/rpc";
+  function createGasRunner(successCb, failureCb) {
+    return new Proxy({}, {
+      get(target, prop) {
+        if (prop === "withSuccessHandler") {
+          return function(cb) {
+            return createGasRunner(cb, failureCb);
+          };
+        }
+        if (prop === "withFailureHandler") {
+          return function(cb) {
+            return createGasRunner(successCb, cb);
+          };
+        }
+        return function(...args) {
+          fetch(LOCAL_RPC_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ fn: prop, args: args })
+          })
+          .then(res => {
+            if (!res.ok) throw new Error("Erreur HTTP " + res.status);
+            return res.json();
+          })
+          .then(data => {
+            if (data && data.error && !data.count && !data.resultats) {
+              if (failureCb) failureCb(new Error(data.error));
+            } else {
+              if (successCb) successCb(data);
+            }
+          })
+          .catch(err => {
+            if (failureCb) failureCb(new Error("Serveur local non joignable. Lancez : node dev_server.js"));
+          });
+        };
+      }
+    });
+  }
+
+  window.google = {
+    script: {
+      run: createGasRunner()
+    }
+  };
+}
+
 document.getElementById("year").innerText = new Date().getFullYear();
 let fileData = null;
 
@@ -344,9 +470,8 @@ async function verifierLicences() {
       progressBar.value = currentCount;
     }
 
-    const trouvesCount = resultats.filter(r => r.trouve).length;
-    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${trouvesCount} licencié(s) validé(s).`;
     renderTable(resultats);
+    updateSummaryStats();
 
   } catch (err) {
     loader.innerText = "Erreur lors de la lecture du fichier : " + err.message;
@@ -355,37 +480,233 @@ async function verifierLicences() {
   }
 }
 
+let dernierResultats = [];
+
+function normalizeForClubMatch(str) {
+  if (!str) return "";
+  return String(str)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function computeParticipantStatus(item, clubCible) {
+  if (!item.trouve) {
+    return {
+      code: "MISSING",
+      cssClass: "status-missing",
+      text: "Non trouvé"
+    };
+  }
+
+  const clubCibleNorm = normalizeForClubMatch(clubCible);
+  const playerClubNorm = normalizeForClubMatch(item.club);
+
+  if (!clubCibleNorm) {
+    return {
+      code: "OK",
+      cssClass: "status-ok",
+      text: `✓ ${item.club && item.club !== "-" ? escapeHtml(item.club) : "Trouvé"}`
+    };
+  }
+
+  if (playerClubNorm && (playerClubNorm.includes(clubCibleNorm) || clubCibleNorm.includes(playerClubNorm))) {
+    return {
+      code: "OK_TARGET_CLUB",
+      cssClass: "status-ok",
+      text: `✓ ${escapeHtml(item.club || clubCible)}`
+    };
+  } else {
+    return {
+      code: "OTHER_CLUB",
+      cssClass: "status-other-club",
+      text: `⚠️ Autre club (${escapeHtml(item.club && item.club !== "-" ? item.club : "Sans club")})`
+    };
+  }
+}
+
+function updateSummaryStats() {
+  const loader = document.getElementById("loader");
+  if (!loader || !dernierResultats || dernierResultats.length === 0) return;
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim();
+  const total = dernierResultats.length;
+
+  let countClub = 0;
+  let countOther = 0;
+  let countMissing = 0;
+
+  dernierResultats.forEach(r => {
+    const st = computeParticipantStatus(r, clubCible);
+    if (st.code === "OK_TARGET_CLUB" || (st.code === "OK" && !clubCible)) {
+      countClub++;
+    } else if (st.code === "OTHER_CLUB") {
+      countOther++;
+    } else {
+      countMissing++;
+    }
+  });
+
+  if (clubCible) {
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${countClub} licencié(s) à ${clubCible}, ${countOther} autre(s) club(s), ${countMissing} non trouvé(s).`;
+  } else {
+    const trouves = countClub + countOther;
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${trouves} licencié(s) validé(s), ${countMissing} non trouvé(s).`;
+  }
+}
+
+function renderSourceBadge(source) {
+  if (!source) return "-";
+  const s = String(source).toUpperCase();
+  if (s.includes("CHESSXP")) {
+    return `<span class="source-badge source-chessxp" title="Données ChessXP (synchronisation hebdomadaire)">⚡ ChessXP</span>`;
+  } else if (s.includes("FFE") || s.includes("SCRAPING")) {
+    return `<span class="source-badge source-scraping" title="Données officielles en direct FFE (temps réel)">🌐 FFE Direct</span>`;
+  }
+  return `<span class="source-badge">${escapeHtml(source)}</span>`;
+}
+
+function renderLicenceRowHtml(item, idx) {
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim();
+  const statusInfo = computeParticipantStatus(item, clubCible);
+
+  return `<tr id="row-lic-${idx}">
+    <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
+    <td>${escapeHtml(item.nrFFE)}</td>
+    <td>${escapeHtml(item.npFFE)}</td>
+    <td>${escapeHtml(item.club || "-")}</td>
+    <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
+    <td>${escapeHtml(item.elo || "-")}</td>
+    <td>${escapeHtml(item.paiement)}</td>
+    <td id="lic-source-${idx}">${renderSourceBadge(item.source)}</td>
+    <td id="lic-status-${idx}" class="${statusInfo.cssClass}">${statusInfo.text}</td>
+    <td>
+      <button id="btn-recheck-lic-${idx}" class="btn-recheck" onclick="recheckParticipantFFE(${idx})" title="Vérifier ce participant en direct sur le site officiel de la FFE">
+        🔄 Re-vérifier FFE
+      </button>
+    </td>
+  </tr>`;
+}
+
 function renderTable(data) {
+  dernierResultats = data || [];
+
   let html = `<table><thead><tr>
     <th>Participant (Export)</th>
     <th>NrFFE</th>
     <th>Nom Prénom (FFE)</th>
+    <th>Club (FFE)</th>
     <th>Af.</th>
     <th>Elo</th>
     <th>Paiement</th>
     <th>Source</th>
     <th>Statut</th>
+    <th>Action</th>
   </tr></thead><tbody>`;
 
-  data.forEach(item => {
-    const statusClass = item.trouve ? "status-ok" : "status-missing";
-    const statusText = item.trouve ? "Trouvé" : "Non trouvé";
-    const sourceBadge = item.source ? `<span class="badge-af">${escapeHtml(item.source)}</span>` : "-";
-
-    html += `<tr>
-      <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
-      <td>${escapeHtml(item.nrFFE)}</td>
-      <td>${escapeHtml(item.npFFE)}</td>
-      <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
-      <td>${escapeHtml(item.elo || "-")}</td>
-      <td>${escapeHtml(item.paiement)}</td>
-      <td>${sourceBadge}</td>
-      <td class="${statusClass}">${statusText}</td>
-    </tr>`;
+  dernierResultats.forEach((item, idx) => {
+    html += renderLicenceRowHtml(item, idx);
   });
 
   html += "</tbody></table>";
   document.getElementById("result").innerHTML = html;
+}
+
+// Ré-évaluation dynamique en temps réel si l'utilisateur modifie le Club Cible
+const clubCibleInputEl = document.getElementById("clubCible");
+if (clubCibleInputEl) {
+  clubCibleInputEl.addEventListener("input", () => {
+    if (dernierResultats && dernierResultats.length > 0) {
+      renderTable(dernierResultats);
+      updateSummaryStats();
+    }
+  });
+}
+
+function recheckParticipantFFE(idx) {
+  const item = dernierResultats[idx];
+  if (!item) return;
+
+  const btn = document.getElementById(`btn-recheck-lic-${idx}`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerText = "⏳ Direct FFE...";
+  }
+
+  const clubCibleInput = document.getElementById("clubCible");
+  let clubParam = (clubCibleInput ? clubCibleInput.value : "").trim();
+  if (item.club && item.club !== "-" && item.club !== "Sans club") {
+    clubParam = item.club;
+  }
+
+  const handleSuccess = (resp) => {
+    if (resp && resp.joueurs && resp.joueurs.length > 0) {
+      const j = resp.joueurs[0];
+      item.trouve = true;
+      item.nrFFE = j.nrFFE || "-";
+      item.npFFE = j.np || "-";
+      item.af = j.af || "-";
+      item.elo = j.elo || "-";
+      item.club = j.club || "-";
+      item.source = "FFE_SCRAPING";
+      item.lienFFE = j.lienFFE;
+      item.lienFIDE = j.lienFIDE;
+
+      const row = document.getElementById(`row-lic-${idx}`);
+      if (row) {
+        row.outerHTML = renderLicenceRowHtml(item, idx);
+        const newRow = document.getElementById(`row-lic-${idx}`);
+        if (newRow) {
+          newRow.classList.add("row-updated");
+          const newBtn = document.getElementById(`btn-recheck-lic-${idx}`);
+          if (newBtn) {
+            newBtn.innerText = "✓ FFE Direct";
+            setTimeout(() => { if (newBtn) newBtn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+          }
+        }
+      }
+      updateSummaryStats();
+    } else {
+      if (btn) {
+        btn.innerText = "⚠️ Non trouvé";
+        btn.disabled = false;
+        setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+      }
+    }
+  };
+
+  const handleFailure = (err) => {
+    if (btn) {
+      btn.innerText = "⚠️ Non trouvé";
+      btn.disabled = false;
+      setTimeout(() => { if (btn) btn.innerText = "🔄 Re-vérifier FFE"; }, 3000);
+    }
+  };
+
+  if (typeof google === "undefined" || !google.script || !google.script.run) {
+    setTimeout(() => {
+      item.trouve = true;
+      item.source = "FFE_SCRAPING";
+      handleSuccess({
+        joueurs: [{
+          nrFFE: item.nrFFE !== "-" ? item.nrFFE : "K51184",
+          np: `${item.nomExport} ${item.prenomExport}`,
+          af: "A",
+          elo: "1800",
+          club: clubParam,
+          source: "FFE_SCRAPING"
+        }]
+      });
+    }, 400);
+    return;
+  }
+
+  google.script.run
+    .withSuccessHandler(handleSuccess)
+    .withFailureHandler(handleFailure)
+    .REVERIFIER_JOUEUR_DIRECT_FFE_JSON(item.nomExport, item.prenomExport, clubParam, item.nrFFE);
 }
 </script>
 

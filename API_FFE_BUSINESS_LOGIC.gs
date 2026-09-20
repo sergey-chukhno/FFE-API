@@ -20,11 +20,8 @@ function ffeRechercheNominal(nom, prenom, forceScraping = false) {
   if (!forceScraping) {
     try {
       const apiJoueurs = chessXpSearchPlayersByName(nom, prenom);
-      // Si on cherche avec prénom précis ou si l'API retourne plusieurs homonymes (>1)
       if (apiJoueurs && apiJoueurs.length > 0) {
-        if (hasPrenom || apiJoueurs.length > 1) {
-          return { joueurs: apiJoueurs, source: "CHESSXP" };
-        }
+        return { joueurs: apiJoueurs, source: "CHESSXP" };
       }
     } catch (e) {
       if (DEBUG) Logger.log(`[FALLBACK ACTIVÉ] Erreur API ChessXP: ${e.message} → Bascule Scraping`);
@@ -213,11 +210,19 @@ function ffeVerifierLicencesBatch(participants, clubCible, forceScraping = false
       joueurTrouve = licenceMap.get(lic);
     }
 
-    // 2. Sinon recherche nominale filtrée par club via la couche hybride
+    // 2. Sinon recherche nominale (priorité au club cible si fourni, sinon recherche ouverte)
     if (!joueurTrouve && (nom || prenom)) {
-      const res = ffeRechercheNominalClub(nom, prenom, clubCible, forceScraping);
-      if (res && res.joueurs && res.joueurs.length > 0) {
-        joueurTrouve = res.joueurs[0];
+      if (clubCible) {
+        const res = ffeRechercheNominalClub(nom, prenom, clubCible, forceScraping);
+        if (res && res.joueurs && res.joueurs.length > 0) {
+          joueurTrouve = res.joueurs[0];
+        }
+      }
+      if (!joueurTrouve) {
+        const resNominal = ffeRechercheNominal(nom, prenom, forceScraping);
+        if (resNominal && resNominal.joueurs && resNominal.joueurs.length > 0) {
+          joueurTrouve = resNominal.joueurs[0];
+        }
       }
     }
 
