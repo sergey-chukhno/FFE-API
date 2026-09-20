@@ -606,7 +606,7 @@ function recheckParticipantFFE(idx) {
           np: `${item.nomExport} ${item.prenomExport}`,
           af: "A",
           elo: "1800",
-          club: clubCible,
+          club: clubParam,
           source: "FFE_SCRAPING"
         }]
       });
@@ -617,7 +617,7 @@ function recheckParticipantFFE(idx) {
   google.script.run
     .withSuccessHandler(handleSuccess)
     .withFailureHandler(handleFailure)
-    .REVERIFIER_JOUEUR_DIRECT_FFE_JSON(item.nomExport, item.prenomExport, clubCible, item.nrFFE);
+    .REVERIFIER_JOUEUR_DIRECT_FFE_JSON(item.nomExport, item.prenomExport, clubParam, item.nrFFE);
 }
 </script>
 
