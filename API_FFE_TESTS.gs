@@ -17,6 +17,9 @@ function test_ALL() {
   test_HTML_STRUCTURE();
   test_SENTINEL();
 
+  test_CHESSXP_API();
+  test_BENCHMARK_SCRAPING_VS_API();
+
   TestRunner.summary();
 
 }
@@ -476,6 +479,135 @@ function test_SENTINEL() {
 
     validator: (n) => n > 0
 
+  });
+
+}
+
+/*************************************************************
+ * TEST CHESSXP API (CLIENT & MAPPING)
+ *************************************************************/
+
+function test_CHESSXP_API() {
+
+  TestRunner.startSuite("CHESSXP API");
+
+  TestRunner.run({
+    desc: "Recherche nominale AZARI William",
+    nom: "AZARI",
+    prenom: "William",
+    expected: "K51184 (FIDE enrichi)",
+    fn: (t) => {
+      const joueurs = chessXpSearchPlayersByName(t.nom, t.prenom);
+      if (!joueurs || !joueurs.length) return "Aucun résultat";
+      const j = joueurs[0];
+      return `${j.NrFFE()} | ${j.NP()} | ${j.Club()} | Fide ${j.IdFIDE()}`;
+    },
+    validator: (actual) => {
+      return actual.includes("K51184") && actual.includes("AZARI William") && actual.includes("Marseille-Echecs") && actual.includes("Fide 36062375");
+    }
+  });
+
+  TestRunner.run({
+    desc: "Homonymes MARTIN (au moins 2 joueurs actifs)",
+    nom: "MARTIN",
+    prenom: "",
+    expected: "au moins 2 joueurs",
+    fn: (t) => {
+      const joueurs = chessXpSearchPlayersByName(t.nom, t.prenom);
+      return joueurs.length;
+    },
+    validator: (count) => count >= 2
+  });
+
+  TestRunner.run({
+    desc: "Nom composé VACHIER-LAGRAVE Maxime",
+    nom: "VACHIER-LAGRAVE",
+    prenom: "Maxime",
+    expected: "Trouvé avec Elo > 2700",
+    fn: (t) => {
+      const joueurs = chessXpSearchPlayersByName(t.nom, t.prenom);
+      if (!joueurs || !joueurs.length) return "Non trouvé";
+      return parseInt(joueurs[0].Elo(), 10) > 2700 ? "OK" : "Elo trop bas";
+    },
+    validator: (res) => res === "OK"
+  });
+
+  TestRunner.run({
+    desc: "Joueur introuvable ZYZYGY Robot",
+    nom: "ZYZYGY",
+    prenom: "Robot",
+    expected: 0,
+    fn: (t) => {
+      const joueurs = chessXpSearchPlayersByName(t.nom, t.prenom);
+      return joueurs.length;
+    },
+    validator: validateEquals
+  });
+
+  TestRunner.run({
+    desc: "Récupération unitaire par licence K51184",
+    licence: "K51184",
+    expected: "AZARI William",
+    fn: (t) => {
+      const j = chessXpGetPlayerByLicence(t.licence);
+      return j ? j.NP() : "null";
+    },
+    validator: (np) => np.includes("AZARI")
+  });
+
+  TestRunner.run({
+    desc: "Récupération par lot (batch) 2 licences",
+    licences: ["K51184", "R00057"],
+    expected: 2,
+    fn: (t) => {
+      const batch = chessXpGetPlayersBatch(t.licences);
+      return batch.length;
+    },
+    validator: validateEquals
+  });
+
+}
+
+/*************************************************************
+ * BENCHMARK COMPARATIF : SCRAPING vs CHESSXP API
+ *************************************************************/
+
+function test_BENCHMARK_SCRAPING_VS_API() {
+
+  TestRunner.startSuite("BENCHMARK SCRAPING vs API");
+
+  TestRunner.run({
+    desc: "Comparatif Recherche Nominale (AZARI William)",
+    expected: "API plus rapide que Scraping",
+    fn: () => {
+      // 1. Scraping FFE
+      const t0 = Date.now();
+      const scrapPlayers = fetchPlayersList("AZARI", "William");
+      const scrapDuration = Date.now() - t0;
+
+      // 2. API ChessXP
+      const t1 = Date.now();
+      const apiPlayers = chessXpSearchPlayersByName("AZARI", "William");
+      const apiDuration = Date.now() - t1;
+
+      const speedup = scrapDuration > 0 ? (scrapDuration / Math.max(1, apiDuration)).toFixed(1) : "N/A";
+
+      Logger.log("=== RÉSULTATS COMPARATIFS NOMINAL ===");
+      Logger.log(`Scraping FFE : ${scrapDuration} ms (${scrapPlayers.length} joueur(s))`);
+      Logger.log(`API ChessXP  : ${apiDuration} ms (${apiPlayers.length} joueur(s))`);
+      Logger.log(`Accélération : x${speedup}`);
+
+      return {
+        scraping_ms: scrapDuration,
+        api_ms: apiDuration,
+        speedup: `x${speedup}`,
+        scraping_count: scrapPlayers.length,
+        api_count: apiPlayers.length
+      };
+    },
+    validator: (res) => {
+      return res.api_count > 0 && res.scraping_count > 0;
+    }
   });
 
 }
