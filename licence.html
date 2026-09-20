@@ -40,7 +40,7 @@ body {
 
 /* ===== CARD ===== */
 .container {
-  max-width:1100px;
+  max-width:1200px;
   margin:20px auto 40px auto;
   background:var(--card);
   padding:30px;
@@ -128,6 +128,7 @@ tr:hover { background:rgba(0,0,0,0.05); }
 }
 
 .status-ok { color: #10b981; font-weight: 600; }
+.status-other-club { color: #f59e0b; font-weight: 600; }
 .status-missing { color: #ef4444; font-weight: 600; }
 
 /* ===== BADGES SOURCE ===== */
@@ -469,9 +470,8 @@ async function verifierLicences() {
       progressBar.value = currentCount;
     }
 
-    const trouvesCount = resultats.filter(r => r.trouve).length;
-    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${trouvesCount} licencié(s) validé(s).`;
     renderTable(resultats);
+    updateSummaryStats();
 
   } catch (err) {
     loader.innerText = "Erreur lors de la lecture du fichier : " + err.message;
@@ -481,6 +481,80 @@ async function verifierLicences() {
 }
 
 let dernierResultats = [];
+
+function normalizeForClubMatch(str) {
+  if (!str) return "";
+  return String(str)
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]/g, "");
+}
+
+function computeParticipantStatus(item, clubCible) {
+  if (!item.trouve) {
+    return {
+      code: "MISSING",
+      cssClass: "status-missing",
+      text: "Non trouvé"
+    };
+  }
+
+  const clubCibleNorm = normalizeForClubMatch(clubCible);
+  const playerClubNorm = normalizeForClubMatch(item.club);
+
+  if (!clubCibleNorm) {
+    return {
+      code: "OK",
+      cssClass: "status-ok",
+      text: `✓ ${item.club && item.club !== "-" ? escapeHtml(item.club) : "Trouvé"}`
+    };
+  }
+
+  if (playerClubNorm && (playerClubNorm.includes(clubCibleNorm) || clubCibleNorm.includes(playerClubNorm))) {
+    return {
+      code: "OK_TARGET_CLUB",
+      cssClass: "status-ok",
+      text: `✓ ${escapeHtml(item.club || clubCible)}`
+    };
+  } else {
+    return {
+      code: "OTHER_CLUB",
+      cssClass: "status-other-club",
+      text: `⚠️ Autre club (${escapeHtml(item.club && item.club !== "-" ? item.club : "Sans club")})`
+    };
+  }
+}
+
+function updateSummaryStats() {
+  const loader = document.getElementById("loader");
+  if (!loader || !dernierResultats || dernierResultats.length === 0) return;
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim();
+  const total = dernierResultats.length;
+
+  let countClub = 0;
+  let countOther = 0;
+  let countMissing = 0;
+
+  dernierResultats.forEach(r => {
+    const st = computeParticipantStatus(r, clubCible);
+    if (st.code === "OK_TARGET_CLUB" || (st.code === "OK" && !clubCible)) {
+      countClub++;
+    } else if (st.code === "OTHER_CLUB") {
+      countOther++;
+    } else {
+      countMissing++;
+    }
+  });
+
+  if (clubCible) {
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${countClub} licencié(s) à ${clubCible}, ${countOther} autre(s) club(s), ${countMissing} non trouvé(s).`;
+  } else {
+    const trouves = countClub + countOther;
+    loader.innerText = `Analyse terminée : ${total} participant(s) traité(s) — ${trouves} licencié(s) validé(s), ${countMissing} non trouvé(s).`;
+  }
+}
 
 function renderSourceBadge(source) {
   if (!source) return "-";
@@ -494,18 +568,20 @@ function renderSourceBadge(source) {
 }
 
 function renderLicenceRowHtml(item, idx) {
-  const statusClass = item.trouve ? "status-ok" : "status-missing";
-  const statusText = item.trouve ? "Trouvé" : "Non trouvé";
+  const clubCibleInput = document.getElementById("clubCible");
+  const clubCible = (clubCibleInput ? clubCibleInput.value : "").trim();
+  const statusInfo = computeParticipantStatus(item, clubCible);
 
   return `<tr id="row-lic-${idx}">
     <td><strong>${escapeHtml(item.nomExport)}</strong> ${escapeHtml(item.prenomExport)}</td>
     <td>${escapeHtml(item.nrFFE)}</td>
     <td>${escapeHtml(item.npFFE)}</td>
+    <td>${escapeHtml(item.club || "-")}</td>
     <td><span class="badge-af">${escapeHtml(item.af)}</span></td>
     <td>${escapeHtml(item.elo || "-")}</td>
     <td>${escapeHtml(item.paiement)}</td>
     <td id="lic-source-${idx}">${renderSourceBadge(item.source)}</td>
-    <td id="lic-status-${idx}" class="${statusClass}">${statusText}</td>
+    <td id="lic-status-${idx}" class="${statusInfo.cssClass}">${statusInfo.text}</td>
     <td>
       <button id="btn-recheck-lic-${idx}" class="btn-recheck" onclick="recheckParticipantFFE(${idx})" title="Vérifier ce participant en direct sur le site officiel de la FFE">
         🔄 Re-vérifier FFE
@@ -521,6 +597,7 @@ function renderTable(data) {
     <th>Participant (Export)</th>
     <th>NrFFE</th>
     <th>Nom Prénom (FFE)</th>
+    <th>Club (FFE)</th>
     <th>Af.</th>
     <th>Elo</th>
     <th>Paiement</th>
@@ -535,6 +612,17 @@ function renderTable(data) {
 
   html += "</tbody></table>";
   document.getElementById("result").innerHTML = html;
+}
+
+// Ré-évaluation dynamique en temps réel si l'utilisateur modifie le Club Cible
+const clubCibleInputEl = document.getElementById("clubCible");
+if (clubCibleInputEl) {
+  clubCibleInputEl.addEventListener("input", () => {
+    if (dernierResultats && dernierResultats.length > 0) {
+      renderTable(dernierResultats);
+      updateSummaryStats();
+    }
+  });
 }
 
 function recheckParticipantFFE(idx) {
@@ -579,6 +667,7 @@ function recheckParticipantFFE(idx) {
           }
         }
       }
+      updateSummaryStats();
     } else {
       if (btn) {
         btn.innerText = "⚠️ Non trouvé";
