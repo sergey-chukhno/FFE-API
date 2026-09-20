@@ -13,6 +13,7 @@ function Joueur(nrFFE, np, af, elo, rapide, blitz, cat, M, club, idFFE) {
   this.m_club   = club   || "Sans club";
   this.m_idFFE  = idFFE  || "";
   this.m_idFIDE = "";
+  this.source   = "FFE_SCRAPING";
 }
 
 Joueur.prototype.NrFFE  = function() { return this.m_nrFFE; };
@@ -26,6 +27,7 @@ Joueur.prototype.M      = function() { return this.m_M; };
 Joueur.prototype.Club   = function() { return this.m_club; };
 Joueur.prototype.IdFFE  = function() { return this.m_idFFE; };
 Joueur.prototype.IdFIDE = function() { return this.m_idFIDE; };
+Joueur.prototype.Source = function() { return this.source; };
 
 Joueur.prototype.toString = function() {
   return this.m_nrFFE + " | " + this.m_np +
@@ -35,7 +37,7 @@ Joueur.prototype.toString = function() {
          " | Blz " + this.m_blitz +
          " | " + this.m_cat + (this.m_M || "") +
          " | " + this.m_club +
-         (WITH_FIDE ? " | Fide " + (this.m_idFIDE || "?") : "");
+         (WITH_FIDE || this.m_idFIDE ? " | Fide " + (this.m_idFIDE || "?") : "");
 };
 
 Joueur.prototype.toJSON = function() {
@@ -48,11 +50,12 @@ Joueur.prototype.toJSON = function() {
     blitz: this.m_blitz,
     cat: this.m_cat,
     club: this.m_club,
+    source: this.source || "FFE_SCRAPING",
     lienFFE: this.m_idFFE
       ? "https://www.echecs.asso.fr/FicheJoueur.aspx?Id=" + this.m_idFFE
       : null
   };
-  if (WITH_FIDE) {
+  if (WITH_FIDE || this.m_idFIDE) {
     json.lienFIDE = this.m_idFIDE
       ? "https://ratings.fide.com/profile/" + this.m_idFIDE
       : null;

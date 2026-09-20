@@ -18,6 +18,7 @@ function test_ALL() {
   test_SENTINEL();
 
   test_CHESSXP_API();
+  test_HYBRID_FALLBACK();
   test_BENCHMARK_SCRAPING_VS_API();
 
   TestRunner.summary();
@@ -564,6 +565,94 @@ function test_CHESSXP_API() {
       return batch.length;
     },
     validator: validateEquals
+  });
+
+}
+
+/*************************************************************
+ * TEST COUCHE METIER HYBRIDE & FALLBACK AUTOMATIQUE
+ *************************************************************/
+
+function test_HYBRID_FALLBACK() {
+
+  TestRunner.startSuite("HYBRID & FALLBACK");
+
+  // Test 1: Recherche nominale servie par ChessXP (source = CHESSXP)
+  TestRunner.run({
+    desc: "Recherche nominale standard via ChessXP",
+    nom: "AZARI",
+    prenom: "William",
+    expected: "CHESSXP (1 joueur)",
+    fn: (t) => {
+      const res = ffeRechercheNominal(t.nom, t.prenom);
+      return `${res.source} (${res.joueurs ? res.joueurs.length : 0} joueur)`;
+    },
+    validator: (act) => act.includes("CHESSXP (1 joueur)")
+  });
+
+  // Test 2: Fallback automatique sur FFE Scraping pour les licences N inactives absentes de ChessXP
+  TestRunner.run({
+    desc: "Fallback automatique FFE pour joueur absent de ChessXP (MARTIN Louis)",
+    nom: "MARTIN",
+    prenom: "Louis",
+    expected: "FFE_SCRAPING",
+    fn: (t) => {
+      const res = ffeRechercheNominal(t.nom, t.prenom);
+      return res.source;
+    },
+    validator: (src) => src === "FFE_SCRAPING"
+  });
+
+  // Test 3: Forçage manuel du scraping direct (forceScraping = true)
+  TestRunner.run({
+    desc: "Forçage manuel scraping direct (forceScraping=true)",
+    nom: "AZARI",
+    prenom: "William",
+    expected: "FFE_SCRAPING",
+    fn: (t) => {
+      const res = ffeRechercheNominal(t.nom, t.prenom, true);
+      return res.source;
+    },
+    validator: (src) => src === "FFE_SCRAPING"
+  });
+
+  // Test 4: Joueur introuvable nulle part
+  TestRunner.run({
+    desc: "Joueur introuvable nulle part (ZYZYGY Robot)",
+    nom: "ZYZYGY",
+    prenom: "Robot",
+    expected: "Joueur Non trouvé",
+    fn: (t) => {
+      const res = ffeRechercheNominal(t.nom, t.prenom);
+      return res.error;
+    },
+    validator: validateEquals
+  });
+
+  // Test 5: Recherche Club Hybride
+  TestRunner.run({
+    desc: "Effectif Club Hybride (Marseille-Echecs)",
+    club: "Marseille-Echecs",
+    expected: "CHESSXP avec joueurs",
+    fn: (t) => {
+      const res = ffeRechercheClubJoueurs(t.club);
+      return `${res.source} (${res.count} joueurs)`;
+    },
+    validator: (act) => act.startsWith("CHESSXP") && !act.includes("(0 joueurs)")
+  });
+
+  // Test 6: Couche JSON Hybride (avec source et lienFIDE)
+  TestRunner.run({
+    desc: "Couche JSON avec source et lienFIDE",
+    nom: "AZARI",
+    prenom: "William",
+    expected: "CHESSXP avec lienFIDE",
+    fn: (t) => {
+      const json = RECHERCHE_FFE_NOMINAL_JSON(t.nom, t.prenom);
+      const hasFide = json.joueurs && json.joueurs[0] && json.joueurs[0].lienFIDE;
+      return `${json.source} | FIDE: ${!!hasFide}`;
+    },
+    validator: (act) => act === "CHESSXP | FIDE: true"
   });
 
 }
