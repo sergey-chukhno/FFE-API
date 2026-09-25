@@ -181,6 +181,17 @@ const server = http.createServer((req, res) => {
   }
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ Erreur : Le port ${PORT} est déjà utilisé par un autre processus.`);
+    console.error(`👉 Pour libérer le port ${PORT}, vous pouvez exécuter :`);
+    console.error(`   kill -9 $(lsof -ti :${PORT})\n`);
+    process.exit(1);
+  } else {
+    throw err;
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`====================================================`);
   console.log(` Serveur de Test Local RecupFFE démarré ! `);
