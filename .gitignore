@@ -1,3 +1,14 @@
+# Dependencies
 node_modules/
-package-lock.json
+
+# Next.js build output
+.next/
+out/
+*.tsbuildinfo
+
+# Environment files
+.env*.local
+
+# System files
 .DS_Store
+*.log
