@@ -1,0 +1,28 @@
+# Docker Compose pour RecupFFE v1.1
+# PostgreSQL 16 isolé sur le port 5433 (ne perturbe pas le PostgreSQL local sur le port 5432)
+# Auteur : Sergey CHUKHNO
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: recupffe-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: recupffe
+      POSTGRES_USER: recupffe
+      POSTGRES_PASSWORD: recupffe_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - recupffe_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U recupffe -d recupffe"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  recupffe_pgdata:
+    driver: local
