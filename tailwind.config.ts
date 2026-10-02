@@ -1,6 +1,7 @@
 import type { Config } from "tailwindcss";
 
 const config: Config = {
+  darkMode: "class",
   content: [
     "./src/pages/**/*.{js,ts,jsx,tsx,mdx}",
     "./src/components/**/*.{js,ts,jsx,tsx,mdx}",
@@ -12,12 +13,16 @@ const config: Config = {
         background: "var(--background)",
         foreground: "var(--foreground)",
         marseille: {
-          50: "#f0f7ff",
-          100: "#e0effe",
-          500: "#0284c7",
-          600: "#0369a1",
-          700: "#075985",
-          900: "#0c4a6e",
+          50: "#f0f5ff",
+          100: "#e5edff",
+          200: "#cddbfe",
+          300: "#b4c6fc",
+          500: "#1f3c88", // Official Marseille-Échecs Navy Blue
+          600: "#193170",
+          700: "#142657",
+          800: "#0f1c3f",
+          900: "#091024",
+          accent: "#3b82f6",
         }
       },
     },
