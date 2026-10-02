@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/sync-club",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
