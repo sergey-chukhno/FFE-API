@@ -143,14 +143,14 @@ export function HeaderBanner() {
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                  RecupFFE
+                  Marseille-Échecs
                 </span>
                 <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
                   v1.1
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
-                Marseille-Échecs • Scraping Pur FFE & PostgreSQL
+                Boîte à outils & Gestion administrative
               </p>
             </div>
           </div>
@@ -163,7 +163,7 @@ export function HeaderBanner() {
               <div className="flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-marseille-500 dark:text-sky-400" />
                 <span className="font-semibold text-slate-900 dark:text-white">
-                  {status ? `${status.totalMembers} licenciés` : (loading ? "..." : "0 licencié")}
+                  {status ? `${status.totalMembers ?? (status as any).totalPlayers ?? 0} licenciés` : (loading ? "..." : "0 licencié")}
                 </span>
               </div>
 

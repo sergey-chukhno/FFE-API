@@ -36,11 +36,12 @@ export default function Home() {
       <footer className="w-full border-t border-slate-200/80 dark:border-slate-800/80 py-6 text-center text-xs text-slate-500 dark:text-slate-400 no-print glass-panel mt-auto">
         <div className="max-w-7xl mx-auto px-4 space-y-1">
           <p className="font-medium text-slate-700 dark:text-slate-300">
-            RecupFFE v1.1 — Plateforme FFE & Marseille-Échecs • Conçu et développé par{" "}
+            Marseille-Échecs : Boîte à outils & Gestion administrative v1.1 — powered by{" "}
+            <strong className="text-slate-800 dark:text-slate-200 font-semibold">Grégory CHIRON</strong> &{" "}
             <strong className="text-marseille-500 dark:text-sky-400 font-semibold">Sergey CHUKHNO</strong>
           </p>
           <p className="text-[11px] text-slate-400">
-            Pure Scraping FFE Officiel (echecs.asso.fr) • Base PostgreSQL haute performance • Zéro dépendance API tierce
+            Next.js • Pure Scraping FFE Officiel (echecs.asso.fr) • PostgreSQL haute performance
           </p>
         </div>
       </footer>

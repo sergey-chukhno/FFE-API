@@ -22,6 +22,7 @@ export async function GET() {
       clubCode,
       clubName,
       totalPlayers,
+      totalMembers: totalPlayers,
       lastSync: lastSync
         ? {
             id: lastSync.id,
