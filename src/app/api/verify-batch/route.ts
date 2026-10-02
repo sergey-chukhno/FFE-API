@@ -44,8 +44,9 @@ export async function POST(request: NextRequest) {
     let participants: ParsedParticipant[] = [];
 
     // 1. Ingestion selon le format envoyé
-    if (Array.isArray(body.rows)) {
-      participants = parseExcelRows(body.rows);
+    const rawInput = body.rows || body.rawLines;
+    if (Array.isArray(rawInput)) {
+      participants = parseExcelRows(rawInput);
     } else if (Array.isArray(body.players)) {
       participants = body.players.map((p: any) => ({
         licence: p.licence ? String(p.licence).trim().toUpperCase() : undefined,
@@ -61,7 +62,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: "Format de requête invalide. Attendu: { rows: [] } ou { players: [] } ou { licences: [] }",
+          error: "Format de requête invalide. Attendu: { rows: [] } ou { rawLines: [] } ou { players: [] } ou { licences: [] }",
         },
         { status: 400 }
       );
@@ -174,10 +175,21 @@ export async function POST(request: NextRequest) {
 
     const durationMs = Math.round((performance.now() - start) * 100) / 100;
 
+    const verifiedA = verified.filter((v) => v.player?.af === "A");
+    const verifiedB = verified.filter((v) => v.player?.af === "B");
+
     return NextResponse.json({
       success: true,
       verified,
+      verifiedA,
+      verifiedB,
       unverified,
+      totalProcessed: participants.length,
+      totalVerified: verified.length,
+      verifiedACount: countA,
+      verifiedBCount: countB,
+      unverifiedCount: unverified.length,
+      durationMs,
       stats: {
         total: participants.length,
         verifiedCount: verified.length,
