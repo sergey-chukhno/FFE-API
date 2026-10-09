@@ -10,6 +10,7 @@ import { getPlayersByLicences, searchLocalPlayers } from "@/lib/db/repository";
 import { parseExcelRows, ParsedParticipant } from "@/lib/parser/excel_batch";
 import { PlayerRecord } from "@/lib/db/schema";
 import { normalizeForMatch } from "@/lib/scraper/normalization";
+import { authenticateApi } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,11 @@ export interface BatchItemResult {
 }
 
 export async function POST(request: NextRequest) {
+  const authResult = await authenticateApi(request, "license:verify");
+  if (authResult.errorResponse) {
+    return authResult.errorResponse;
+  }
+
   const start = performance.now();
 
   try {

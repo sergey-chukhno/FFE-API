@@ -8,10 +8,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchLocalPlayers } from "@/lib/db/repository";
 import { searchFfePlayers } from "@/lib/scraper/service";
+import { authenticateApi } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
+  const authResult = await authenticateApi(request, "player:search");
+  if (authResult.errorResponse) {
+    return authResult.errorResponse;
+  }
+
   const { searchParams } = new URL(request.url);
   const q = searchParams.get("q") || "";
   const nom = searchParams.get("nom") || q;

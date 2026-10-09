@@ -2,8 +2,23 @@
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
-import { RefreshCw, Moon, Sun, Info, Users, Clock, AlertTriangle, CheckCircle2 } from "lucide-react";
+import {
+  RefreshCw,
+  Moon,
+  Sun,
+  Info,
+  Users,
+  Clock,
+  AlertTriangle,
+  CheckCircle2,
+  LogOut,
+  Shield,
+  Crown,
+  GraduationCap,
+  FileSpreadsheet,
+} from "lucide-react";
 import { SyncExplanationModal } from "./SyncExplanationModal";
+import { useSession, signOut } from "@/lib/auth/client";
 
 interface ClubStatusData {
   clubCode: string;
@@ -20,6 +35,7 @@ interface ClubStatusData {
 }
 
 export function HeaderBanner() {
+  const { data: session } = useSession();
   const [status, setStatus] = useState<ClubStatusData | null>(null);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -131,13 +147,12 @@ export function HeaderBanner() {
           <div className="flex items-center gap-3.5 group cursor-pointer">
             <div className="relative w-10 h-10 rounded-xl bg-gradient-to-br from-marseille-500 to-marseille-700 flex items-center justify-center p-1.5 shadow-md shadow-marseille-500/25 transition-transform duration-300 transform group-hover:scale-105">
               <Image
-                src="https://www.marseille-echecs.com/wp-content/uploads/2023/04/logo-blanc.png"
+                src="/logo-blanc.png"
                 alt="Logo Marseille-Échecs"
                 width={36}
                 height={36}
                 className="w-full h-auto object-contain filter drop-shadow"
                 priority
-                unoptimized
               />
             </div>
             <div>
@@ -146,7 +161,7 @@ export function HeaderBanner() {
                   Marseille-Échecs
                 </span>
                 <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/20">
-                  v1.1
+                  v1.2
                 </span>
               </div>
               <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
@@ -205,6 +220,55 @@ export function HeaderBanner() {
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin text-sky-200" : ""}`} />
               <span>{syncing ? "Synchronisation..." : "Synchroniser"}</span>
             </button>
+
+            {/* Utilisateur connecté & Rôle RBAC */}
+            {session?.user && (
+              <div className="flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-slate-800">
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold bg-white/80 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 shadow-sm">
+                  {session.user.role === "superadmin" && (
+                    <span className="inline-flex items-center gap-1.5 text-rose-600 dark:text-rose-400">
+                      <Shield className="w-3.5 h-3.5 text-rose-500" />
+                      Superadmin
+                    </span>
+                  )}
+                  {session.user.role === "director" && (
+                    <span className="inline-flex items-center gap-1.5 text-amber-600 dark:text-amber-400">
+                      <Crown className="w-3.5 h-3.5 text-amber-500" />
+                      Directeur
+                    </span>
+                  )}
+                  {session.user.role === "coach" && (
+                    <span className="inline-flex items-center gap-1.5 text-sky-600 dark:text-sky-400">
+                      <GraduationCap className="w-3.5 h-3.5 text-sky-500" />
+                      Entraîneur
+                    </span>
+                  )}
+                  {session.user.role === "secretary" && (
+                    <span className="inline-flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                      <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                      Secrétaire
+                    </span>
+                  )}
+                  <span className="text-slate-400 font-normal hidden sm:inline">•</span>
+                  <span className="text-slate-700 dark:text-slate-300 font-medium hidden sm:inline max-w-[120px] truncate">
+                    {session.user.name || session.user.email}
+                  </span>
+                </div>
+
+                {/* Bouton de déconnexion */}
+                <button
+                  onClick={async () => {
+                    await signOut();
+                    window.location.href = "/login";
+                  }}
+                  className="p-2 rounded-xl text-slate-500 hover:text-rose-600 dark:text-slate-400 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-transparent hover:border-rose-200 dark:hover:border-rose-900/60 transition-all transform hover:scale-105 active:scale-95"
+                  title="Se déconnecter"
+                  aria-label="Se déconnecter"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            )}
 
             {/* Switcher Day / Dark mode */}
             <button

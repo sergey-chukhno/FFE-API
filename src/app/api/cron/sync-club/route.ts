@@ -8,38 +8,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllClubMembers } from "@/lib/scraper/service";
 import { upsertPlayers, logSync } from "@/lib/db/repository";
+import { getServerSession } from "@/lib/auth/session";
+import { hasPermission } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
 
 /**
- * Vérifie l'autorisation d'accès via le jeton secret CRON_SECRET.
+ * Vérifie l'autorisation d'accès via CRON_SECRET ou rôle RBAC (directeur / superadmin).
  */
-function isAuthorized(request: NextRequest): boolean {
+async function checkSyncAuthorization(request: NextRequest): Promise<{ authorized: boolean; forbidden?: boolean }> {
   const cronSecret = process.env.CRON_SECRET;
-
-  // En local de développement si aucun secret n'est défini
-  if (!cronSecret && process.env.NODE_ENV === "development") {
-    return true;
-  }
-
-  if (!cronSecret) {
-    return false;
-  }
 
   // 1. En-tête standard Vercel Cron
   const authHeader = request.headers.get("authorization");
-  if (authHeader === `Bearer ${cronSecret}`) {
-    return true;
+  if (cronSecret && authHeader === `Bearer ${cronSecret}`) {
+    return { authorized: true };
   }
 
   // 2. Paramètre de requête (?secret=... ou ?key=...)
   const { searchParams } = new URL(request.url);
   const secretParam = searchParams.get("secret") || searchParams.get("key");
-  if (secretParam === cronSecret) {
-    return true;
+  if (cronSecret && secretParam === cronSecret) {
+    return { authorized: true };
   }
 
-  return false;
+  // 3. Authentification utilisateur RBAC (Directeur Sportif ou Superadmin)
+  const session = await getServerSession(request.headers);
+  if (session) {
+    if (hasPermission(session.user.role, "sync:execute")) {
+      return { authorized: true };
+    }
+    return { authorized: false, forbidden: true };
+  }
+
+  // En local de développement sans secret défini et sans session
+  if (!cronSecret && process.env.NODE_ENV === "development") {
+    return { authorized: true };
+  }
+
+  return { authorized: false };
 }
 
 /**
@@ -75,12 +82,26 @@ async function executeSync(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const clubCode = searchParams.get("club") || process.env.DEFAULT_CLUB_CODE || "N06013";
 
-  if (!isAuthorized(request)) {
+  const authCheck = await checkSyncAuthorization(request);
+  if (!authCheck.authorized) {
+    if (authCheck.forbidden) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: "FAILED",
+          reason: "FORBIDDEN: Seul le Directeur Sportif ou le Superadmin peut déclencher la synchronisation",
+          clubCode,
+          timestamp: new Date().toISOString(),
+        },
+        { status: 403 }
+      );
+    }
+
     return NextResponse.json(
       {
         success: false,
         status: "FAILED",
-        reason: "AUTH_ERROR: Jeton secret CRON_SECRET invalide ou manquant",
+        reason: "AUTH_ERROR: Jeton secret CRON_SECRET invalide ou session non autorisée",
         clubCode,
         timestamp: new Date().toISOString(),
       },

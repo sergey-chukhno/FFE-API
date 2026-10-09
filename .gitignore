@@ -13,3 +13,6 @@ out/
 # System files
 .DS_Store
 *.log
+
+# Comptes Rendus et validations internes
+docs/CRs/
