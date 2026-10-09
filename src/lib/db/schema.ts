@@ -60,8 +60,59 @@ export function toPlayerRecord(player: Player): Omit<PlayerRecord, "updatedAt"> 
   };
 }
 
+export type UserRole = "superadmin" | "director" | "coach" | "secretary";
+
+export interface UserRecord {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  image: string | null;
+  role: UserRole;
+  phone: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ClassRecord {
+  id: number;
+  name: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  level: string;
+  coachId: string | null;
+  active: boolean;
+  createdAt: Date;
+}
+
+export type InventoryCategory = "BOUTIQUE" | "BUVETTE" | "BIBLIOTHEQUE";
+
+export interface InventoryItemRecord {
+  id: number;
+  name: string;
+  category: InventoryCategory;
+  stockQuantity: number;
+  unitPrice: number;
+  alertThreshold: number;
+  description: string | null;
+  lastRestockedAt: Date | null;
+  updatedBy: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface InventoryLogRecord {
+  id: number;
+  itemId: number;
+  changeAmount: number;
+  reason: string;
+  performedBy: string | null;
+  createdAt: Date;
+}
+
 /**
- * Définition DDL SQL des tables et index de haute performance.
+ * Définition DDL SQL des tables et index de haute performance pour RecupFFE v1.2.
  */
 export const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS players (
@@ -98,4 +149,102 @@ CREATE TABLE IF NOT EXISTS sync_logs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sync_logs_created_at ON sync_logs(created_at DESC);
+
+-- Tables d'authentification Better-Auth v1.2
+CREATE TABLE IF NOT EXISTS "user" (
+  "id" TEXT PRIMARY KEY,
+  "name" TEXT NOT NULL,
+  "email" TEXT UNIQUE NOT NULL,
+  "emailVerified" BOOLEAN NOT NULL DEFAULT FALSE,
+  "image" TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "role" TEXT NOT NULL DEFAULT 'coach',
+  "phone" TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_role ON "user"("role");
+
+CREATE TABLE IF NOT EXISTS "session" (
+  "id" TEXT PRIMARY KEY,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "token" TEXT UNIQUE NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "ipAddress" TEXT,
+  "userAgent" TEXT,
+  "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_session_user_id ON "session"("userId");
+
+CREATE TABLE IF NOT EXISTS "account" (
+  "id" TEXT PRIMARY KEY,
+  "accountId" TEXT NOT NULL,
+  "providerId" TEXT NOT NULL,
+  "userId" TEXT NOT NULL REFERENCES "user"("id") ON DELETE CASCADE,
+  "accessToken" TEXT,
+  "refreshToken" TEXT,
+  "idToken" TEXT,
+  "accessTokenExpiresAt" TIMESTAMPTZ,
+  "refreshTokenExpiresAt" TIMESTAMPTZ,
+  "scope" TEXT,
+  "password" TEXT,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_account_user_id ON "account"("userId");
+
+CREATE TABLE IF NOT EXISTS "verification" (
+  "id" TEXT PRIMARY KEY,
+  "identifier" TEXT NOT NULL,
+  "value" TEXT NOT NULL,
+  "expiresAt" TIMESTAMPTZ NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Modules Métier v1.2 (Classes & Inventaire)
+CREATE TABLE IF NOT EXISTS classes (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(150) NOT NULL,
+  day_of_week VARCHAR(30) NOT NULL,
+  start_time VARCHAR(10) NOT NULL,
+  end_time VARCHAR(10) NOT NULL,
+  level VARCHAR(50) NOT NULL DEFAULT 'Débutants',
+  coach_id TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+  active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_classes_coach_id ON classes(coach_id);
+
+CREATE TABLE IF NOT EXISTS inventory_items (
+  id SERIAL PRIMARY KEY,
+  name VARCHAR(255) NOT NULL,
+  category VARCHAR(50) NOT NULL,
+  stock_quantity INTEGER NOT NULL DEFAULT 0,
+  unit_price NUMERIC(8, 2) NOT NULL DEFAULT 0.00,
+  alert_threshold INTEGER NOT NULL DEFAULT 5,
+  description TEXT,
+  last_restocked_at TIMESTAMPTZ,
+  updated_by TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_category ON inventory_items(category);
+
+CREATE TABLE IF NOT EXISTS inventory_logs (
+  id SERIAL PRIMARY KEY,
+  item_id INTEGER NOT NULL REFERENCES inventory_items(id) ON DELETE CASCADE,
+  change_amount INTEGER NOT NULL,
+  reason VARCHAR(100) NOT NULL,
+  performed_by TEXT REFERENCES "user"(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_logs_item ON inventory_logs(item_id);
 `;
+
