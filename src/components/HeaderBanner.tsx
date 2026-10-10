@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { SyncExplanationModal } from "./SyncExplanationModal";
 import { useSession, signOut } from "@/lib/auth/client";
+import { hasPermission } from "@/lib/auth/permissions";
 
 interface ClubStatusData {
   clubCode: string;
@@ -210,16 +211,18 @@ export function HeaderBanner() {
               <Info className="w-4 h-4" />
             </button>
 
-            {/* Bouton Synchroniser avec micro-animation */}
-            <button
-              onClick={handleSyncClub}
-              disabled={syncing}
-              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-marseille-500 to-marseille-600 hover:from-marseille-600 hover:to-marseille-700 text-white shadow-sm shadow-marseille-500/25 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
-              title="Mettre à jour l'effectif complet du club depuis le serveur officiel FFE"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin text-sky-200" : ""}`} />
-              <span>{syncing ? "Synchronisation..." : "Synchroniser"}</span>
-            </button>
+            {/* Bouton Synchroniser avec micro-animation (Réservé au Directeur et Superadmin) */}
+            {hasPermission(session?.user?.role, "sync:execute") && (
+              <button
+                onClick={handleSyncClub}
+                disabled={syncing}
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-gradient-to-r from-marseille-500 to-marseille-600 hover:from-marseille-600 hover:to-marseille-700 text-white shadow-sm shadow-marseille-500/25 transition-all transform hover:scale-[1.02] active:scale-[0.98] disabled:opacity-60 disabled:cursor-not-allowed"
+                title="Mettre à jour l'effectif complet du club depuis le serveur officiel FFE"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? "animate-spin text-sky-200" : ""}`} />
+                <span>{syncing ? "Synchronisation..." : "Synchroniser"}</span>
+              </button>
+            )}
 
             {/* Utilisateur connecté & Rôle RBAC */}
             {session?.user && (

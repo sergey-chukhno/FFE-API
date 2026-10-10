@@ -339,6 +339,80 @@ export async function getPlayersCount(): Promise<number> {
 }
 
 /**
+ * Retourne les statistiques démographiques et fédérales complètes du club.
+ */
+export interface ClubDemographicStats {
+  total: number;
+  licenceA: number;
+  licenceB: number;
+  hommes: number;
+  femmes: number;
+  jeunes: number;
+  seniors: number;
+  veterans: number;
+}
+
+export async function getClubDemographicStats(): Promise<ClubDemographicStats> {
+  const pool = getDbPool();
+  if (pool) {
+    try {
+      const res = await pool.query(`
+        SELECT 
+          COUNT(*)::int as total,
+          COUNT(*) FILTER (WHERE af = 'A')::int as "licenceA",
+          COUNT(*) FILTER (WHERE af = 'B')::int as "licenceB",
+          COUNT(*) FILTER (WHERE cat LIKE '%F')::int as femmes,
+          COUNT(*) FILTER (WHERE cat LIKE '%M')::int as hommes,
+          COUNT(*) FILTER (WHERE cat LIKE 'Ppo%' OR cat LIKE 'Pou%' OR cat LIKE 'Pup%' OR cat LIKE 'Ben%' OR cat LIKE 'Min%' OR cat LIKE 'Cad%' OR cat LIKE 'Jun%')::int as jeunes,
+          COUNT(*) FILTER (WHERE cat LIKE 'Sen%')::int as seniors,
+          COUNT(*) FILTER (WHERE cat LIKE 'Sep%' OR cat LIKE 'Vet%')::int as veterans
+        FROM players;
+      `);
+      if (res.rows[0]) {
+        return res.rows[0];
+      }
+    } catch (err) {
+      console.warn("Échec stats Postgres, bascule sur mémoire:", err);
+    }
+  }
+
+  // Calcul sur repli mémoire
+  let licenceA = 0;
+  let licenceB = 0;
+  let femmes = 0;
+  let hommes = 0;
+  let jeunes = 0;
+  let seniors = 0;
+  let veterans = 0;
+
+  for (const p of memoryPlayers.values()) {
+    if (p.af === "A") licenceA++;
+    if (p.af === "B") licenceB++;
+    if (p.cat.endsWith("F")) femmes++;
+    if (p.cat.endsWith("M")) hommes++;
+    const prefix = p.cat.slice(0, 3);
+    if (["Ppo", "Pou", "Pup", "Ben", "Min", "Cad", "Jun"].includes(prefix)) {
+      jeunes++;
+    } else if (p.cat.startsWith("Sen")) {
+      seniors++;
+    } else if (p.cat.startsWith("Sep") || p.cat.startsWith("Vet")) {
+      veterans++;
+    }
+  }
+
+  return {
+    total: memoryPlayers.size,
+    licenceA,
+    licenceB,
+    hommes,
+    femmes,
+    jeunes,
+    seniors,
+    veterans,
+  };
+}
+
+/**
  * Réinitialise l'état en mémoire (utilisé principalement pour les tests).
  */
 export function clearMemoryDb(): void {

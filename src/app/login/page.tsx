@@ -34,9 +34,18 @@ function LoginForm() {
   const [isDark, setIsDark] = useState(false);
   const [selectedDemoRole, setSelectedDemoRole] = useState<string | null>(null);
   const [showGoogleNotice, setShowGoogleNotice] = useState(false);
+  const [isLocalHost, setIsLocalHost] = useState(true);
 
-  // Thème clair/sombre synchronisé
+  // Thème clair/sombre synchronisé et détection de l'environnement local
   useEffect(() => {
+    if (typeof window !== "undefined") {
+      const isLocal =
+        window.location.hostname === "localhost" ||
+        window.location.hostname === "127.0.0.1" ||
+        process.env.NODE_ENV !== "production";
+      setIsLocalHost(isLocal);
+    }
+
     const savedTheme = localStorage.getItem("theme");
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     const shouldBeDark = savedTheme ? savedTheme === "dark" : prefersDark;
@@ -273,8 +282,8 @@ function LoginForm() {
             </div>
           )}
 
-          {/* Encart Raccourcis de Test (Strictement en Mode Développement) */}
-          {process.env.NODE_ENV === "development" && (
+          {/* Encart Raccourcis de Test (Strictement en Mode Local / Développement) */}
+          {isLocalHost && (
             <div className="mt-6 pt-5 border-t border-slate-200/80 dark:border-slate-800/80">
               <div className="flex items-center justify-between mb-2.5">
                 <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
